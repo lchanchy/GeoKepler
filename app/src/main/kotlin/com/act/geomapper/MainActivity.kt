@@ -232,10 +232,7 @@ private fun AppRoot(
                 val mapStateParc by mapVM.uiState.collectAsStateWithLifecycle()
                 ParcelacionScreen(
                     vm            = parcelacionVM,
-                    poligonos     = predioState.predios.filter {
-                        it.geometry.geometryType != "Point" &&
-                        it.geometry.geometryType != "LineString"
-                    },
+                    poligonos     = predioState.predios,
                     proyectoId    = proyState.proyectoSeleccionadoId ?: 1L,
                     basemapActual = basemapActual,
                     predioInicial = predioParaParcelar,
