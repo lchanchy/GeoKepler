@@ -38,6 +38,7 @@ import com.act.geomapper.domain.models.Predio
 import com.act.geomapper.presentation.components.Basemap
 import com.act.geomapper.presentation.components.NorthArrow
 import com.act.geomapper.presentation.components.rememberAzimut
+import com.act.geomapper.presentation.overlay.crearPuntoDot
 import com.act.geomapper.presentation.components.toTileSource
 import com.act.geomapper.presentation.viewmodels.ModoParcelacion
 import com.act.geomapper.presentation.viewmodels.ParcelacionViewModel
@@ -1402,8 +1403,8 @@ private fun dibujarPoligonosContexto(
                 Marker(mapView).apply {
                     id       = TAG_REF_POINT
                     position = GeoPoint(c.y, c.x)
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    icon     = crearPinAzul(mapView.context, predio.nombre)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    icon     = crearPuntoDot(mapView.context, android.graphics.Color.parseColor("#1A1A1A"), 16)
                     infoWindow = null
                     mapView.overlays.add(this)
                 }
@@ -1470,40 +1471,6 @@ private fun dibujarPoligonosContexto(
         }
     }
     mapView.invalidate()
-}
-
-/** Pin azul pequeño con etiqueta del nombre, para puntos de referencia en Parcelación */
-private fun crearPinAzul(context: Context, nombre: String): android.graphics.drawable.BitmapDrawable {
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize  = 24f
-        color     = AColor.WHITE
-        typeface  = Typeface.DEFAULT_BOLD
-        textAlign = Paint.Align.CENTER
-    }
-    val txtCorto = if (nombre.length > 12) nombre.take(11) + "…" else nombre
-    val textW = paint.measureText(txtCorto)
-    val padH = 10f; val padV = 6f
-    val chipW = (textW + padH * 2).toInt()
-    val chipH = (paint.textSize + padV * 2).toInt()
-    val pinH  = 14
-    val w     = chipW.coerceAtLeast(24)
-    val h     = chipH + pinH
-
-    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    val c   = Canvas(bmp)
-    val bgP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AColor.parseColor("#1565C0") }
-    c.drawRoundRect(0f, 0f, w.toFloat(), chipH.toFloat(), chipH / 2f, chipH / 2f, bgP)
-    c.drawText(txtCorto, w / 2f, chipH - padV - 2f, paint)
-    // Triángulo puntero
-    val path = android.graphics.Path().apply {
-        moveTo(w / 2f - 7f, chipH.toFloat())
-        lineTo(w / 2f + 7f, chipH.toFloat())
-        lineTo(w / 2f, h.toFloat())
-        close()
-    }
-    c.drawPath(path, bgP)
-
-    return android.graphics.drawable.BitmapDrawable(context.resources, bmp)
 }
 
 // Crea un Bitmap con chip naranja y texto blanco para usar como icono de Marker
