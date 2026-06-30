@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Bloquea cleartext (HTTP) en toda la app.
+    OSMDroid usa HTTPS para tiles — sin excepción necesaria.
+    Si se agrega NTRIP en el futuro, añadir un domain config aquí
+    con cleartextTrafficPermitted="true" para el host NTRIP.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

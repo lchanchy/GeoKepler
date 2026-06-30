@@ -45,8 +45,6 @@ import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import org.locationtech.jts.io.WKTReader
 import com.act.geomapper.data.settings.CoordFormat
 import com.act.geomapper.data.settings.formatCoord
@@ -420,7 +418,6 @@ private fun Crosshair(modifier: Modifier = Modifier) {
 private const val TAG_CAPTURA    = "captura"
 private const val TAG_BORRADOR   = "borrador"
 private const val TAG_GUARDADA   = "guardada"
-private const val TAG_UBICACION  = "ubicacion"
 private const val TAG_AREA_LBL   = "guardada_a"
 private const val TAG_NAVEGACION = "navegacion"
 
@@ -622,48 +619,6 @@ private fun crearEtiquetaTexto(context: android.content.Context, texto: String):
 private class MinZoomMarker(mapView: MapView, private val minZoom: Double) : Marker(mapView) {
     override fun draw(c: android.graphics.Canvas, osmv: MapView, shadow: Boolean) {
         if (osmv.zoomLevelDouble >= minZoom) super.draw(c, osmv, shadow)
-    }
-}
-
-// P2: punto azul pulsante — ponytail: MyLocationOverlay nativo de osmdroid
-private fun actualizarPuntoUbicacion(mapView: MapView, punto: PuntoGps?) {
-    mapView.overlays.removeAll { it is Marker && (it as Marker).id == TAG_UBICACION }
-    if (punto == null) { mapView.invalidate(); return }
-    Marker(mapView).apply {
-        id       = TAG_UBICACION
-        position = GeoPoint(punto.latitud, punto.longitud)
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-        title    = "Mi ubicación"
-        // ponytail: marcador default — el halo pulsante se hace en Compose (ver UbicacionDot)
-        mapView.overlays.add(this)
-    }
-    mapView.invalidate()
-}
-
-// ── P2: halo pulsante en Compose (superpuesto, no en el mapa) ────────────────
-// ponytail: visible solo cuando GPS activo; posición fija al centro por simplicidad
-// (el Marker en el mapa muestra la posición real)
-@Composable
-private fun UbicacionDot(visible: Boolean) {
-    if (!visible) return
-    val inf = rememberInfiniteTransition(label = "halo")
-    val haloAlpha by inf.animateFloat(
-        initialValue   = 0.6f,
-        targetValue    = 0f,
-        animationSpec  = infiniteRepeatable(tween(1200), RepeatMode.Restart),
-        label          = "haloAlpha"
-    )
-    val haloScale by inf.animateFloat(
-        initialValue   = 1f,
-        targetValue    = 2.4f,
-        animationSpec  = infiniteRepeatable(tween(1200), RepeatMode.Restart),
-        label          = "haloScale"
-    )
-    Canvas(modifier = Modifier.size(24.dp)) {
-        val c = Offset(size.width / 2f, size.height / 2f)
-        drawCircle(Color(0x990D47A1).copy(alpha = haloAlpha), radius = 8.dp.toPx() * haloScale, center = c)
-        drawCircle(Color(0xFF1565C0), radius = 7.dp.toPx(), center = c)
-        drawCircle(Color.White, radius = 3.dp.toPx(), center = c)
     }
 }
 

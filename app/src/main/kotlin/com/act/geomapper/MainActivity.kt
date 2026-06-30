@@ -41,6 +41,7 @@ import com.act.geomapper.domain.usecase.ObtenerTodosPrediosUseCase
 import com.act.geomapper.presentation.components.*
 import com.act.geomapper.presentation.screens.*
 import com.act.geomapper.presentation.viewmodels.*
+import com.act.geomapper.security.RootDetector
 import com.act.geomapper.ui.theme.GeoMapperTheme
 
 class MainActivity : ComponentActivity() {
@@ -119,8 +120,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+            var mostrarAvisoRoot by remember { mutableStateOf(RootDetector.isRooted()) }
 
             GeoMapperTheme(oscuro = settings.darkMode, idioma = settings.language) {
+                if (mostrarAvisoRoot) {
+                    AlertDialog(
+                        onDismissRequest = { mostrarAvisoRoot = false },
+                        title   = { Text("Dispositivo con permisos root") },
+                        text    = { Text("Se detectaron permisos root en este dispositivo. GeoKepler puede continuar, pero los datos no están garantizados como seguros en este entorno.") },
+                        confirmButton = {
+                            TextButton(onClick = { mostrarAvisoRoot = false }) { Text("Entendido") }
+                        }
+                    )
+                }
                 AppRoot(
                     proyectoVM    = proyectoViewModel,
                     mapVM         = mapViewModel,
