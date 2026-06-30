@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Espaciados base -->
+    <dimen name="espaciado_xs">4dp</dimen>
+    <dimen name="espaciado_sm">8dp</dimen>
+    <dimen name="espaciado_md">16dp</dimen>
+    <dimen name="espaciado_lg">24dp</dimen>
+    <dimen name="espaciado_xl">32dp</dimen>
+
+    <!-- Componentes UI -->
+    <dimen name="fab_size">56dp</dimen>
+    <dimen name="fab_mini_size">40dp</dimen>
+    <dimen name="indicador_gps_ancho">100dp</dimen>
+    <dimen name="rosa_vientos_size">80dp</dimen>
+    <dimen name="flecha_norte_size">40dp</dimen>
+
+    <!-- Bordes -->
+    <dimen name="radio_esquina_sm">8dp</dimen>
+    <dimen name="radio_esquina_md">12dp</dimen>
+    <dimen name="radio_esquina_lg">16dp</dimen>
+
+    <!-- Texto -->
+    <dimen name="texto_xs">9sp</dimen>
+    <dimen name="texto_sm">11sp</dimen>
+    <dimen name="texto_md">14sp</dimen>
+    <dimen name="texto_lg">16sp</dimen>
+</resources>

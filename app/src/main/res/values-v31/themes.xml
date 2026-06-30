@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+ (API 31): la splash del sistema muestra SOLO el fondo verde (#0A1F0A)
+    sin ícono ni branding. El color coincide exactamente con el gradiente del Compose
+    SplashScreen, por lo que la transición es imperceptible.
+-->
+<resources>
+    <style name="Theme.GeoKepler" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/verde_act</item>
+        <item name="colorPrimaryVariant">@color/verde_act_claro</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="android:statusBarColor">@color/verde_act</item>
+        <item name="android:windowBackground">#0A1F0A</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon_blank</item>
+    </style>
+</resources>

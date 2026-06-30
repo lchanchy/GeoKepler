@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GeoKepler</string>
+    <string name="proyectos">Projects</string>
+    <string name="nuevo_proyecto">New Project</string>
+    <string name="nombre_proyecto">Project name</string>
+    <string name="descripcion_proyecto">Description (optional)</string>
+    <string name="crear">Create</string>
+    <string name="cancelar">Cancel</string>
+    <string name="eliminar">Delete</string>
+    <string name="sin_proyectos">No projects. Tap + to create one.</string>
+    <string name="capturar_punto">Point</string>
+    <string name="capturar_linea">Line</string>
+    <string name="capturar_poligono">Polygon</string>
+    <string name="finalizar">Finish</string>
+    <string name="sin_gps">No GPS</string>
+    <string name="area">Area</string>
+    <string name="error_permisos_gps">Location permissions required</string>
+    <string name="error_puntos_insuficientes">Not enough points for this geometry</string>
+    <string name="error_generico">Unexpected error. Please try again.</string>
+</resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Tema base para la Activity. Compose dibuja toda la UI —
+        el tema nativo solo se necesita para la splash window y
+        la barra de estado. NoActionBar evita el ActionBar nativo
+        que colisionaría con el TopAppBar de Compose.
+    -->
+    <style name="Theme.GeoKepler" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/verde_act</item>
+        <item name="colorPrimaryVariant">@color/verde_act_claro</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="android:statusBarColor">@color/verde_act</item>
+        <item name="android:windowBackground">#0A1F0A</item>
+    </style>
+</resources>

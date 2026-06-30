@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fondo splash — coincide con #0A1F0A del tema y el gradiente de SplashScreen.kt -->
+    <color name="splash_bg">#0A1F0A</color>
+
+    <!-- Verde institucional ACT -->
+    <color name="verde_act">#1B5E20</color>
+    <color name="verde_act_claro">#2E7D32</color>
+    <color name="verde_act_muy_claro">#A5D6A7</color>
+
+    <!-- Azul cartografía -->
+    <color name="azul_mapeo">#0D47A1</color>
+    <color name="azul_mapeo_claro">#1565C0</color>
+
+    <!-- GPS estados -->
+    <color name="gps_bueno">#2E7D32</color>
+    <color name="gps_regular">#F9A825</color>
+    <color name="gps_malo">#E53935</color>
+
+    <!-- Geometrías en mapa -->
+    <color name="poligono_fill">#332E7D32</color>
+    <color name="poligono_stroke">#2E7D32</color>
+    <color name="linea_via">#F9A825</color>
+    <color name="punto_captura">#E53935</color>
+</resources>

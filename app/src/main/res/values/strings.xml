@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GeoKepler</string>
+
+    <!-- Proyectos -->
+    <string name="proyectos">Proyectos</string>
+    <string name="nuevo_proyecto">Nuevo Proyecto</string>
+    <string name="nombre_proyecto">Nombre del proyecto</string>
+    <string name="descripcion_proyecto">Descripción (opcional)</string>
+    <string name="crear">Crear</string>
+    <string name="cancelar">Cancelar</string>
+    <string name="eliminar">Eliminar</string>
+    <string name="sin_proyectos">Sin proyectos. Toca + para crear uno.</string>
+
+    <!-- Predios -->
+    <string name="predio">Predio</string>
+    <string name="predios">Predios</string>
+    <string name="propietario">Propietario</string>
+    <string name="area">Área</string>
+    <string name="area_ha">%.2f ha</string>
+    <string name="perimetro_m">%.1f m</string>
+    <string name="tipo_rural">Rural</string>
+    <string name="tipo_urbano">Urbano</string>
+    <string name="tipo_expansion">Expansión</string>
+
+    <!-- Captura -->
+    <string name="capturar">Capturar</string>
+    <string name="capturar_punto">Punto</string>
+    <string name="capturar_linea">Línea</string>
+    <string name="capturar_poligono">Polígono</string>
+    <string name="finalizar">Finalizar</string>
+    <string name="capturando_punto">Capturando punto…</string>
+    <string name="capturando_linea">Capturando línea (%d pts)</string>
+    <string name="capturando_poligono">Capturando polígono (%d pts)</string>
+
+    <!-- GPS -->
+    <string name="gps_precision">±%dm</string>
+    <string name="gps_satelites">%d sat</string>
+    <string name="sin_gps">Sin GPS</string>
+    <string name="gps_buscando">Buscando señal…</string>
+
+    <!-- Errores -->
+    <string name="error_permisos_gps">Se requieren permisos de ubicación</string>
+    <string name="error_puntos_insuficientes">Se necesitan más puntos para crear esta geometría</string>
+    <string name="error_generico">Error inesperado. Intenta de nuevo.</string>
+</resources>

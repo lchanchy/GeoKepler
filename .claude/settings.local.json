@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Recurse \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\" -File | Select-Object -ExpandProperty FullName | ForEach-Object { $_.Replace\\(\"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\\", \"\"\\) } | Sort-Object)",
+      "PowerShell(java -version 2>&1)",
+      "PowerShell(Get-ChildItem -Recurse \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\res\" | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\res\\\\\", \"\"\\) })",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\kotlin\\\\com\\\\act\\\\geomapper\\\\data\\\\settings\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\kotlin\\\\com\\\\act\\\\geomapper\\\\data\\\\export\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\kotlin\\\\com\\\\act\\\\geomapper\\\\data\\\\import\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\res\\\\values-es\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\res\\\\values-en\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\assets\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\res\\\\xml\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\kotlin\\\\com\\\\act\\\\geomapper\\\\presentation\\\\overlay\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\kotlin\\\\com\\\\act\\\\geomapper\\\\service\")",
+      "Bash(xargs grep -i \"theme\\\\|splash\")",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\assets\\\\GeoKepler.png\" \"C:\\\\Users\\\\LDiaz\\\\Documents\\\\GeoKpler\\\\app\\\\src\\\\main\\\\res\\\\drawable\\\\geokpler_logo.png\" -Force)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(git add *)"
+    ]
+  }
+}
