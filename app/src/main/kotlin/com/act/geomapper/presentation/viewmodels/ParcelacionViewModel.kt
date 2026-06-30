@@ -86,6 +86,10 @@ class ParcelacionViewModel(
         _state.update { it.copy(puntosLinea = it.puntosLinea + Pair(lat, lon)) }
     }
 
+    fun quitarUltimoPunto() {
+        _state.update { s -> if (s.puntosLinea.isEmpty()) s else s.copy(puntosLinea = s.puntosLinea.dropLast(1)) }
+    }
+
     fun finalizarCorte(nombreOriginal: String, proyectoId: Long) {
         val base   = _state.value.predioBase ?: return
         val puntos = _state.value.puntosLinea

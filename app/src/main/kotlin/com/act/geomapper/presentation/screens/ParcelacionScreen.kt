@@ -52,6 +52,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
+import kotlin.math.pow
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 
@@ -295,13 +296,28 @@ fun ParcelacionScreen(
                     Icon(Icons.Default.Close, "Cancelar", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
+                // Botón undo — elimina el último punto trazado
+                val hayPuntos = state.puntosLinea.isNotEmpty()
+                FloatingActionButton(
+                    onClick        = vm::quitarUltimoPunto,
+                    containerColor = if (hayPuntos) Color(0xFF37474F) else Color(0xFF263238),
+                    shape          = RoundedCornerShape(12.dp),
+                    modifier       = Modifier.size(48.dp),
+                    elevation      = FloatingActionButtonDefaults.elevation(4.dp)
+                ) {
+                    Icon(Icons.Default.Undo, "Deshacer punto",
+                        tint     = if (hayPuntos) Color.White else Color(0xFF607D8B),
+                        modifier = Modifier.size(20.dp))
+                }
+
                 // Botón GPS — añade la posición actual del dispositivo
                 val gpsActivo = estadoGps.puntoActual != null
                 FloatingActionButton(
                     onClick = {
                         estadoGps.puntoActual?.let { p ->
-                            vm.agregarPuntoLinea(p.latitud, p.longitud)
-                            mapView.controller.animateTo(GeoPoint(p.latitud, p.longitud))
+                            val (sLat, sLon) = snapAPunto(poligonos, p.latitud, p.longitud)
+                            vm.agregarPuntoLinea(sLat, sLon)
+                            mapView.controller.animateTo(GeoPoint(sLat, sLon))
                         }
                     },
                     containerColor = if (gpsActivo) Color(0xFF00897B) else Color(0xFF546E7A),
@@ -317,11 +333,12 @@ fun ParcelacionScreen(
                     )
                 }
 
-                // Botón diana — añade el centro exacto del mapa
+                // Botón diana — añade el centro del mapa (con snap a punto cercano)
                 FloatingActionButton(
                     onClick = {
                         val gp = mapView.mapCenter as GeoPoint
-                        vm.agregarPuntoLinea(gp.latitude, gp.longitude)
+                        val (sLat, sLon) = snapAPunto(poligonos, gp.latitude, gp.longitude)
+                        vm.agregarPuntoLinea(sLat, sLon)
                     },
                     containerColor = Color(0xFF0D2B4E),
                     shape          = RoundedCornerShape(14.dp),
@@ -1107,9 +1124,41 @@ private const val TAG_DIST_LABEL      = "distLabel"
 private const val TAG_AREA_LABEL_PARC = "areaLabelParc"
 private const val TAG_LINEA_CORTE     = "lineaCorte"
 private const val TAG_SUBPARCELA      = "subpar"
-private const val TAG_SUBPARCELA_LBL  = "subparLbl"   // etiquetas área/dist de subparcelas
-private const val TAG_CONTEXTO        = "contexto"    // polígonos de contexto (resto proyecto)
-private const val TAG_CONTEXTO_LBL    = "contextoLbl" // etiquetas de área de polígonos de contexto
+private const val TAG_SUBPARCELA_LBL  = "subparLbl"
+private const val TAG_CONTEXTO        = "contexto"
+private const val TAG_CONTEXTO_LBL    = "contextoLbl"
+private const val TAG_REF_POINT       = "refPoint"    // puntos de referencia en Parcelación
+
+/** Distancia haversine simplificada en metros para snap (sin necesitar GeometryService) */
+private fun distM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a    = kotlin.math.sin(dLat / 2).pow(2) +
+               kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+               kotlin.math.sin(dLon / 2).pow(2)
+    return 6_371_000.0 * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+}
+
+/**
+ * Si el centro del mapa está a menos de [umbralM] metros de algún punto de referencia
+ * del proyecto, retorna sus coordenadas exactas (snap). Si no, retorna [lat],[lon].
+ */
+private fun snapAPunto(
+    predios  : List<com.act.geomapper.domain.models.Predio>,
+    lat      : Double,
+    lon      : Double,
+    umbralM  : Double = 15.0
+): Pair<Double, Double> {
+    var mejorDist = umbralM
+    var resultado = Pair(lat, lon)
+    for (p in predios) {
+        if (p.geometry.geometryType != "Point") continue
+        val c = p.geometry.coordinates.firstOrNull() ?: continue
+        val d = distM(lat, lon, c.y, c.x)
+        if (d < mejorDist) { mejorDist = d; resultado = Pair(c.y, c.x) }
+    }
+    return resultado
+}
 
 /** Polígono base seleccionado */
 private class PoligonoBasePolygon(mv: MapView) : Polygon(mv)
@@ -1341,10 +1390,43 @@ private fun dibujarPoligonosContexto(
     areaUnit     : com.act.geomapper.data.settings.AreaUnit = com.act.geomapper.data.settings.AreaUnit.HECTARES
 ) {
     mapView.overlays.removeAll { it is ContextoPolygon }
-    mapView.overlays.removeAll { it is Marker && (it as Marker).id == TAG_CONTEXTO_LBL }
+    mapView.overlays.removeAll { it is Marker && (it as Marker).id in setOf(TAG_CONTEXTO_LBL, TAG_REF_POINT) }
+    mapView.overlays.removeAll { it is Polyline && (it as Polyline).title == TAG_CONTEXTO }
     val reader = org.locationtech.jts.io.WKTReader()
     poligonos.forEach { predio ->
-        if (predio.geometry.geometryType !in listOf("Point", "LineString")) {
+        val tipo = predio.geometry.geometryType
+        // ── Puntos de referencia ──────────────────────────────────────────────
+        if (tipo == "Point") {
+            runCatching {
+                val c = predio.geometry.coordinates.firstOrNull() ?: return@runCatching
+                Marker(mapView).apply {
+                    id       = TAG_REF_POINT
+                    position = GeoPoint(c.y, c.x)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    icon     = crearPinAzul(mapView.context, predio.nombre)
+                    infoWindow = null
+                    mapView.overlays.add(this)
+                }
+            }
+            return@forEach
+        }
+        // ── Líneas de referencia ──────────────────────────────────────────────
+        if (tipo == "LineString") {
+            runCatching {
+                val coords = predio.geometry.coordinates.map { GeoPoint(it.y, it.x) }
+                Polyline(mapView).apply {
+                    title   = TAG_CONTEXTO
+                    setPoints(coords)
+                    outlinePaint.color       = AColor.argb(200, 0, 188, 212)
+                    outlinePaint.strokeWidth = 3f
+                    infoWindow = null
+                    mapView.overlays.add(this)
+                }
+            }
+            return@forEach
+        }
+        // ── Polígonos ─────────────────────────────────────────────────────────
+        if (tipo !in listOf("Point", "LineString")) {
             runCatching {
                 val wkt      = org.locationtech.jts.io.WKTWriter().write(predio.geometry)
                 val geom     = reader.read(wkt)
@@ -1388,6 +1470,40 @@ private fun dibujarPoligonosContexto(
         }
     }
     mapView.invalidate()
+}
+
+/** Pin azul pequeño con etiqueta del nombre, para puntos de referencia en Parcelación */
+private fun crearPinAzul(context: Context, nombre: String): android.graphics.drawable.BitmapDrawable {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize  = 24f
+        color     = AColor.WHITE
+        typeface  = Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+    val txtCorto = if (nombre.length > 12) nombre.take(11) + "…" else nombre
+    val textW = paint.measureText(txtCorto)
+    val padH = 10f; val padV = 6f
+    val chipW = (textW + padH * 2).toInt()
+    val chipH = (paint.textSize + padV * 2).toInt()
+    val pinH  = 14
+    val w     = chipW.coerceAtLeast(24)
+    val h     = chipH + pinH
+
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val c   = Canvas(bmp)
+    val bgP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AColor.parseColor("#1565C0") }
+    c.drawRoundRect(0f, 0f, w.toFloat(), chipH.toFloat(), chipH / 2f, chipH / 2f, bgP)
+    c.drawText(txtCorto, w / 2f, chipH - padV - 2f, paint)
+    // Triángulo puntero
+    val path = android.graphics.Path().apply {
+        moveTo(w / 2f - 7f, chipH.toFloat())
+        lineTo(w / 2f + 7f, chipH.toFloat())
+        lineTo(w / 2f, h.toFloat())
+        close()
+    }
+    c.drawPath(path, bgP)
+
+    return android.graphics.drawable.BitmapDrawable(context.resources, bmp)
 }
 
 // Crea un Bitmap con chip naranja y texto blanco para usar como icono de Marker

@@ -108,6 +108,11 @@ class MainActivity : ComponentActivity() {
             uri?.let { importViewModel.parsearArchivo(this, it) }
         }
 
+        // Archivo abierto directamente (app estaba cerrada) desde WhatsApp / Files / etc.
+        if (intent?.action == android.content.Intent.ACTION_VIEW) {
+            intent.data?.let { importViewModel.parsearArchivo(this, it) }
+        }
+
         // Observar cambios de idioma fuera del Compose para aplicar locale
         settingsViewModel.settings
             .map { it.language }
@@ -149,6 +154,14 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
+        }
+    }
+
+    // Recibe archivo abierto desde WhatsApp / Archivos cuando la app ya está corriendo
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == android.content.Intent.ACTION_VIEW) {
+            intent.data?.let { importViewModel.parsearArchivo(this, it) }
         }
     }
 
