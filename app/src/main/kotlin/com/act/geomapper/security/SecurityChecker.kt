@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import com.act.geomapper.BuildConfig
 import java.security.MessageDigest
 
 object SecurityChecker {
@@ -16,7 +17,8 @@ object SecurityChecker {
         "46:AA:CA:3E:39:EF:70:DB:06:F1:81:CA:02:30:37:AB:8D:0E:87:FB:C1:8A:C0:77:D2:E3:3B:69:C1:1F:68:3F"
 
     fun verificar(context: Context) {
-        if (FIRMA_ESPERADA.isEmpty()) return  // aún no configurado — omitir
+        if (BuildConfig.DEBUG) return  // solo actúa en release
+        if (FIRMA_ESPERADA.isEmpty()) return
         if (!obtenerFirmaActual(context).equals(FIRMA_ESPERADA, ignoreCase = true)) {
             Log.e(TAG, "Firma inválida — APK modificado o re-empaquetado")
             android.os.Process.killProcess(android.os.Process.myPid())
