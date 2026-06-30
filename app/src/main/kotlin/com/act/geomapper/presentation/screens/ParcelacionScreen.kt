@@ -89,7 +89,8 @@ fun ParcelacionScreen(
     val s = LocalStrings.current
     val titulo = when (state.modo) {
         ModoParcelacion.CORTE             -> s.corteManual
-        ModoParcelacion.VIA               -> s.trazarVia
+        ModoParcelacion.VIA,
+        ModoParcelacion.VIA_LINEA         -> s.trazarVia
         ModoParcelacion.SUBDIVISION       -> s.subdividirLote
         ModoParcelacion.SUBDIVISION_LINEA -> s.trazarDireccionCorte
         ModoParcelacion.IDLE              -> s.herramientasTerreno
@@ -109,9 +110,8 @@ fun ParcelacionScreen(
                 private var lastY = Float.NaN
                 private val MIN_PX = 12f   // distancia mínima en píxeles antes de añadir otro punto
 
-                private fun enModoTrazo() = state.modo == ModoParcelacion.CORTE ||
-                    state.modo == ModoParcelacion.VIA ||
-                    state.modo == ModoParcelacion.SUBDIVISION_LINEA
+                // Todos los modos usan diana + botón — el overlay de arrastre queda desactivado
+                private fun enModoTrazo() = false
 
                 override fun onTouchEvent(e: MotionEvent, mv: MapView): Boolean {
                     if (!enModoTrazo()) return false
@@ -188,8 +188,8 @@ fun ParcelacionScreen(
     }
 
     // Línea en tiempo real: puntos confirmados + rubber-band hasta la diana
-    val enModoTrazo = state.modo == ModoParcelacion.CORTE ||
-                      state.modo == ModoParcelacion.VIA   ||
+    val enModoTrazo = state.modo == ModoParcelacion.CORTE         ||
+                      state.modo == ModoParcelacion.VIA_LINEA     ||
                       state.modo == ModoParcelacion.SUBDIVISION_LINEA
     val puntosConPreview = if (enModoTrazo && state.puntosLinea.isNotEmpty())
         state.puntosLinea + Pair(centroDiana.latitude, centroDiana.longitude)
@@ -199,15 +199,15 @@ fun ParcelacionScreen(
         dibujarLineaEnCurso(mapView, puntosConPreview, state.modo)
     }
 
-    // Dibujar polígonos de contexto (resto del proyecto, muted) y resaltar el seleccionado
-    LaunchedEffect(poligonos, state.predioBase) {
-        dibujarPoligonosContexto(mapView, poligonos, state.predioBase?.id)
+    // Dibujar polígonos de contexto (resto del proyecto) y resaltar el seleccionado
+    LaunchedEffect(poligonos, state.predioBase, areaUnit) {
+        dibujarPoligonosContexto(mapView, poligonos, state.predioBase?.id, areaUnit)
     }
 
-    // Dibujar subparcelas resultado con etiquetas de área y distancia
-    LaunchedEffect(state.subparcelas, areaUnit, distanceUnit) {
+    // Dibujar subparcelas resultado con etiquetas de área y distancia (vía: sin etiquetas)
+    LaunchedEffect(state.subparcelas, state.esVia, areaUnit, distanceUnit) {
         if (state.subparcelas.isNotEmpty()) {
-            dibujarSubparcelas(mapView, state.subparcelas, areaUnit, distanceUnit)
+            dibujarSubparcelas(mapView, state.subparcelas, areaUnit, distanceUnit, conEtiquetas = !state.esVia)
         } else {
             mapView.overlays.removeAll { it is SubparcelaPolygon }
             mapView.overlays.removeAll { it is Marker && (it as Marker).id == TAG_SUBPARCELA_LBL }
@@ -263,7 +263,7 @@ fun ParcelacionScreen(
             ViaCompactCard(
                 ancho          = state.anchoViaMetros,
                 onAncho        = vm::setAnchoVia,
-                onIniciar      = vm::iniciarVia,
+                onIniciar      = vm::prepararVia,
                 onSelectorPoly = { mostrarSelectorPoligono = true }
             )
         }
@@ -274,6 +274,7 @@ fun ParcelacionScreen(
             ParcCrosshair(modifier = Modifier.fillMaxSize())
 
             // Fila de botones de acción encima de la barra inferior
+            // El cancelar va AQUÍ dentro para no solaparse con "Añadir punto"
             Row(
                 modifier              = Modifier
                     .align(Alignment.BottomCenter)
@@ -283,6 +284,17 @@ fun ParcelacionScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment     = Alignment.CenterVertically
             ) {
+                // Botón cancelar dentro del row para evitar solapamiento
+                FloatingActionButton(
+                    onClick        = vm::cancelar,
+                    containerColor = Color(0xFFF44336),
+                    shape          = RoundedCornerShape(12.dp),
+                    modifier       = Modifier.size(48.dp),
+                    elevation      = FloatingActionButtonDefaults.elevation(4.dp)
+                ) {
+                    Icon(Icons.Default.Close, "Cancelar", tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+
                 // Botón GPS — añade la posición actual del dispositivo
                 val gpsActivo = estadoGps.puntoActual != null
                 FloatingActionButton(
@@ -313,7 +325,7 @@ fun ParcelacionScreen(
                     },
                     containerColor = Color(0xFF0D2B4E),
                     shape          = RoundedCornerShape(14.dp),
-                    modifier       = Modifier.height(44.dp).widthIn(min = 120.dp),
+                    modifier       = Modifier.height(48.dp).widthIn(min = 110.dp),
                     elevation      = FloatingActionButtonDefaults.elevation(4.dp)
                 ) {
                     Row(
@@ -328,9 +340,9 @@ fun ParcelacionScreen(
             }
         }
 
-        // ── Botón cancelar (rojo) en modo activo ─────────────────────────
+        // ── Botón cancelar (rojo) solo para modos config (VIA, SUBDIVISION) ──
         AnimatedVisibility(
-            visible  = state.modo != ModoParcelacion.IDLE,
+            visible  = !enModoTrazo && state.modo != ModoParcelacion.IDLE,
             enter    = scaleIn(),
             exit     = scaleOut(),
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 80.dp)
@@ -347,12 +359,51 @@ fun ParcelacionScreen(
 
         // ── Barra inferior: herramientas o confirmar resultado ───────────
         if (state.pendienteGuardar) {
-            ConfirmationBar(
-                onDeshacer  = vm::deshacerResultado,
-                onConfirmar = vm::confirmarGuardado,
-                onEditar    = { mostrarEditorParcelas = true },
-                modifier    = Modifier.align(Alignment.BottomCenter)
-            )
+            Column(
+                modifier              = Modifier.align(Alignment.BottomCenter),
+                verticalArrangement   = Arrangement.Bottom,
+                horizontalAlignment   = Alignment.CenterHorizontally
+            ) {
+                // Selector de subparcela para corte sucesivo (solo en resultado de 2 piezas)
+                if (state.subparcelas.size == 2) {
+                    Row(
+                        modifier              = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1A3A5C))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Cortar de nuevo:",
+                            color    = Color(0xFF90CAF9),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        state.subparcelasInfo.forEachIndexed { idx, info ->
+                            OutlinedButton(
+                                onClick = { vm.seleccionarSubparcelaComoBase(idx) },
+                                shape   = RoundedCornerShape(10.dp),
+                                border  = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF90CAF9)),
+                                colors  = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF90CAF9)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCut, null, modifier = Modifier.size(12.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(info.nombre.takeLastWhile { it != '_' }.ifBlank { "${idx + 1}" },
+                                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+                ConfirmationBar(
+                    onDeshacer  = vm::deshacerResultado,
+                    onConfirmar = vm::confirmarGuardado,
+                    onEditar    = { mostrarEditorParcelas = true }
+                )
+            }
         } else {
             ToolsBottomBar(
                 modo             = state.modo,
@@ -517,16 +568,19 @@ private fun ToolsBottomBar(
                 }
             }
             ModoParcelacion.CORTE -> {
-                ToolBtn("✓", sb.finalizar,          VerdeBtn, puntosLinea >= 2, onFinalizarCorte,       Modifier.weight(2f))
+                ToolBtn("✓", sb.finalizar, VerdeBtn, puntosLinea >= 2, onFinalizarCorte, Modifier.weight(2f))
             }
             ModoParcelacion.VIA -> {
-                ToolBtn("✓", sb.finalizar,          VerdeBtn, puntosLinea >= 2, onFinalizarVia,         Modifier.weight(2f))
+                // Card de configuración visible arriba — barra queda vacía
+            }
+            ModoParcelacion.VIA_LINEA -> {
+                ToolBtn("✓", sb.finalizar, VerdeBtn, puntosLinea >= 2, onFinalizarVia,   Modifier.weight(2f))
             }
             ModoParcelacion.SUBDIVISION -> {
                 // La card de subdivisión está visible arriba — barra queda vacía
             }
             ModoParcelacion.SUBDIVISION_LINEA -> {
-                ToolBtn("✓", sb.aplicarSubdivision, VerdeBtn, puntosLinea >= 2, onFinalizarSubdivision, Modifier.weight(2f))
+                ToolBtn("✓", sb.finalizar, VerdeBtn, puntosLinea >= 2, onFinalizarSubdivision, Modifier.weight(2f))
             }
         }
     }
@@ -663,8 +717,12 @@ private fun SubdivisionCompactCard(
                         if (valor.isNotBlank() && tipo != TipoSubdivision.PARTES_IGUALES) {
                             valor.toDoubleOrNull()?.takeIf { it > 0 }?.let { v ->
                                 val n = when (tipo) {
-                                    TipoSubdivision.POR_AREA -> (areaHa / v).toInt().coerceAtLeast(2).toString()
-                                    else                     -> "~"
+                                    TipoSubdivision.POR_AREA -> {
+                                        val nFull    = (areaHa / v).toInt()
+                                        val residual = areaHa - nFull * v
+                                        (nFull + if (residual > 0.001) 1 else 0).coerceAtLeast(2).toString()
+                                    }
+                                    else -> "~"
                                 }
                                 Text("→ $n parcelas est.", color = Color(0xFF4CAF50), fontSize = 11.sp)
                             }
@@ -679,7 +737,11 @@ private fun SubdivisionCompactCard(
                             colors         = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                         ) {
                             if (procesando) CircularProgressIndicator(Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
-                            else Text(sc.aplicarSubdivision, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            else {
+                                Icon(Icons.Default.Timeline, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Trazar eje →", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
@@ -706,11 +768,10 @@ private fun TipoSubdivision.campoLabel(s: com.act.geomapper.ui.theme.AppStrings)
 private fun ConfirmationBar(
     onDeshacer  : () -> Unit,
     onConfirmar : () -> Unit,
-    onEditar    : () -> Unit,
-    modifier    : Modifier = Modifier
+    onEditar    : () -> Unit
 ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF0D2B4E))
             .navigationBarsPadding()
@@ -1048,6 +1109,7 @@ private const val TAG_LINEA_CORTE     = "lineaCorte"
 private const val TAG_SUBPARCELA      = "subpar"
 private const val TAG_SUBPARCELA_LBL  = "subparLbl"   // etiquetas área/dist de subparcelas
 private const val TAG_CONTEXTO        = "contexto"    // polígonos de contexto (resto proyecto)
+private const val TAG_CONTEXTO_LBL    = "contextoLbl" // etiquetas de área de polígonos de contexto
 
 /** Polígono base seleccionado */
 private class PoligonoBasePolygon(mv: MapView) : Polygon(mv)
@@ -1058,6 +1120,7 @@ private class ContextoPolygon(mv: MapView) : Polygon(mv)
 
 /** Marker que solo dibuja cuando zoom ≥ minZoom (idéntico al de MapScreen) */
 private class ParcMinZoomMarker(mapView: MapView, private val minZoom: Double) : Marker(mapView) {
+    init { infoWindow = null }
     override fun draw(c: android.graphics.Canvas, osmv: MapView, shadow: Boolean) {
         if (osmv.zoomLevelDouble >= minZoom) super.draw(c, osmv, shadow)
     }
@@ -1175,9 +1238,9 @@ private fun dibujarLineaEnCurso(
     if (puntos.size < 2) { mapView.invalidate(); return }
 
     val color = when (modo) {
-        ModoParcelacion.CORTE             -> RojoCorte
-        ModoParcelacion.VIA               -> GrisVia
-        ModoParcelacion.SUBDIVISION_LINEA -> AColor.rgb(255, 165, 0)  // naranja — dirección de corte
+        ModoParcelacion.CORTE,
+        ModoParcelacion.VIA_LINEA,
+        ModoParcelacion.SUBDIVISION_LINEA -> AColor.parseColor("#00BCD4")  // cian
         else                              -> AColor.GRAY
     }
 
@@ -1199,10 +1262,13 @@ private fun dibujarSubparcelas(
     mapView      : MapView,
     wkts         : List<String>,
     areaUnit     : com.act.geomapper.data.settings.AreaUnit     = com.act.geomapper.data.settings.AreaUnit.HECTARES,
-    distanceUnit : com.act.geomapper.data.settings.DistanceUnit = com.act.geomapper.data.settings.DistanceUnit.METERS
+    distanceUnit : com.act.geomapper.data.settings.DistanceUnit = com.act.geomapper.data.settings.DistanceUnit.METERS,
+    conEtiquetas : Boolean = true
 ) {
     mapView.overlays.removeAll { it is SubparcelaPolygon }
     mapView.overlays.removeAll { it is Marker && (it as Marker).id == TAG_SUBPARCELA_LBL }
+    // Ocultar etiquetas del polígono base para que no se dupliquen con las de las subparcelas
+    mapView.overlays.removeAll { it is Marker && (it as Marker).id in setOf(TAG_DIST_LABEL, TAG_AREA_LABEL_PARC) }
     val reader = org.locationtech.jts.io.WKTReader()
     wkts.forEach { wkt ->
         runCatching {
@@ -1219,44 +1285,46 @@ private fun dibujarSubparcelas(
                 mapView.overlays.add(this)
             }
 
-            // ── Etiqueta de ÁREA en el centroide ──────────────────────
-            val areaM2 = geom.area * 111_320.0 * (111_320.0 * Math.cos(Math.toRadians(4.0)))
-            val areaHa = areaM2 / 10_000.0
-            val textoArea = "%.2f".format(when (areaUnit) {
-                com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaM2
-                com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
-                com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
-            }) + when (areaUnit) {
-                com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
-                com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
-                com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
-            }
-            ParcMinZoomMarker(mapView, 13.0).apply {
-                id       = TAG_SUBPARCELA_LBL
-                position = GeoPoint(centroid.y, centroid.x)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon     = crearChipArea(mapView.context, textoArea)
-                mapView.overlays.add(this)
-            }
-
-            // ── Etiquetas de DISTANCIA por lado ───────────────────────
-            val raw = geom.coordinates
-            for (i in 0 until raw.size - 1) {
-                val c1 = raw[i]; val c2 = raw[i + 1]
-                val distM = haversineParcM(c1.y, c1.x, c2.y, c2.x)
-                if (distM < 0.5) continue
-                val texto = when (distanceUnit) {
-                    com.act.geomapper.data.settings.DistanceUnit.KILOMETERS -> "%.2f km".format(distM / 1000.0)
-                    else -> if (distM >= 1000) "%.2f km".format(distM / 1000.0) else "%.1f m".format(distM)
+            if (conEtiquetas) {
+                // ── Etiqueta de ÁREA en el centroide ──────────────────────
+                val areaM2 = geom.area * 111_320.0 * (111_320.0 * Math.cos(Math.toRadians(4.0)))
+                val areaHa = areaM2 / 10_000.0
+                val textoArea = "%.2f".format(when (areaUnit) {
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaM2
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
+                    com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
+                }) + when (areaUnit) {
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
+                    com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
                 }
-                val midLat = (c1.y + c2.y) / 2 + (centroid.y - (c1.y + c2.y) / 2) * 0.30
-                val midLon = (c1.x + c2.x) / 2 + (centroid.x - (c1.x + c2.x) / 2) * 0.30
-                ParcMinZoomMarker(mapView, 15.0).apply {
+                ParcMinZoomMarker(mapView, 13.0).apply {
                     id       = TAG_SUBPARCELA_LBL
-                    position = GeoPoint(midLat, midLon)
+                    position = GeoPoint(centroid.y, centroid.x)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    icon     = crearChipNaranja(mapView.context, texto)
+                    icon     = crearChipArea(mapView.context, textoArea)
                     mapView.overlays.add(this)
+                }
+
+                // ── Etiquetas de DISTANCIA por lado ───────────────────────
+                val raw = geom.coordinates
+                for (i in 0 until raw.size - 1) {
+                    val c1 = raw[i]; val c2 = raw[i + 1]
+                    val distM = haversineParcM(c1.y, c1.x, c2.y, c2.x)
+                    if (distM < 0.5) continue
+                    val texto = when (distanceUnit) {
+                        com.act.geomapper.data.settings.DistanceUnit.KILOMETERS -> "%.2f km".format(distM / 1000.0)
+                        else -> if (distM >= 1000) "%.2f km".format(distM / 1000.0) else "%.1f m".format(distM)
+                    }
+                    val midLat = (c1.y + c2.y) / 2 + (centroid.y - (c1.y + c2.y) / 2) * 0.30
+                    val midLon = (c1.x + c2.x) / 2 + (centroid.x - (c1.x + c2.x) / 2) * 0.30
+                    ParcMinZoomMarker(mapView, 15.0).apply {
+                        id       = TAG_SUBPARCELA_LBL
+                        position = GeoPoint(midLat, midLon)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon     = crearChipNaranja(mapView.context, texto)
+                        mapView.overlays.add(this)
+                    }
                 }
             }
         }
@@ -1264,33 +1332,57 @@ private fun dibujarSubparcelas(
     mapView.invalidate()
 }
 
-/** Dibuja todos los polígonos del proyecto como contexto (muted) excepto el seleccionado. */
+/** Dibuja todos los polígonos del proyecto como contexto. El seleccionado se resalta;
+ *  los demás muestran su contorno y etiqueta de área para ser identificables. */
 private fun dibujarPoligonosContexto(
     mapView      : MapView,
     poligonos    : List<com.act.geomapper.domain.models.Predio>,
-    predioBaseId : Long?
+    predioBaseId : Long?,
+    areaUnit     : com.act.geomapper.data.settings.AreaUnit = com.act.geomapper.data.settings.AreaUnit.HECTARES
 ) {
     mapView.overlays.removeAll { it is ContextoPolygon }
+    mapView.overlays.removeAll { it is Marker && (it as Marker).id == TAG_CONTEXTO_LBL }
     val reader = org.locationtech.jts.io.WKTReader()
     poligonos.forEach { predio ->
         if (predio.geometry.geometryType !in listOf("Point", "LineString")) {
             runCatching {
-                val wkt    = org.locationtech.jts.io.WKTWriter().write(predio.geometry)
-                val geom   = reader.read(wkt)
-                val coords = geom.coordinates.map { GeoPoint(it.y, it.x) }
-                val esSel  = predio.id == predioBaseId
+                val wkt      = org.locationtech.jts.io.WKTWriter().write(predio.geometry)
+                val geom     = reader.read(wkt)
+                val coords   = geom.coordinates.map { GeoPoint(it.y, it.x) }
+                val centroid = geom.centroid.coordinate
+                val esSel    = predio.id == predioBaseId
 
                 ContextoPolygon(mapView).apply {
                     infoWindow               = null
                     points                   = coords
                     outlinePaint.color       = if (esSel) AColor.parseColor("#FF6D00")
-                                              else AColor.argb(160, 100, 100, 100)
-                    outlinePaint.strokeWidth = if (esSel) 5f else 2f
-                    // Guiones para polígonos de contexto no seleccionados
-                    if (!esSel) outlinePaint.pathEffect = DashPathEffect(floatArrayOf(12f, 8f), 0f)
-                    fillPaint.color          = if (esSel) AColor.argb(40, 255, 109, 0)
-                                              else AColor.argb(20, 150, 150, 150)
+                                              else AColor.argb(200, 255, 109, 0)
+                    outlinePaint.strokeWidth = if (esSel) 6f else 3f
+                    fillPaint.color          = if (esSel) AColor.argb(60, 255, 109, 0)
+                                              else AColor.argb(30, 255, 109, 0)
                     mapView.overlays.add(0, this)  // detrás de todo
+                }
+
+                // Etiqueta de área para polígonos NO seleccionados (el seleccionado ya la tiene en dibujarPoligonoBase)
+                if (!esSel) {
+                    val areaM2 = geom.area * 111_320.0 * (111_320.0 * Math.cos(Math.toRadians(centroid.y)))
+                    val areaHa = areaM2 / 10_000.0
+                    val textoArea = "%.2f".format(when (areaUnit) {
+                        com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaM2
+                        com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
+                        com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
+                    }) + when (areaUnit) {
+                        com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
+                        com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
+                        com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
+                    }
+                    ParcMinZoomMarker(mapView, 13.0).apply {
+                        id       = TAG_CONTEXTO_LBL
+                        position = GeoPoint(centroid.y, centroid.x)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon     = crearChipArea(mapView.context, textoArea)
+                        mapView.overlays.add(this)
+                    }
                 }
             }
         }

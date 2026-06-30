@@ -129,6 +129,75 @@ class GeometryService {
         dividirEnFranjasAngulado(wkt, n, 0.0)
 
     /**
+     * Divide el polígono en piezas de exactamente [areaObjetivoHa] ha cada una,
+     * más un polígono residual con el área sobrante.
+     * Usa búsqueda binaria para encontrar cada línea de corte con precisión.
+     */
+    fun dividirPorAreaObjetivo(wkt: String, areaObjetivoHa: Double, anguloRad: Double): List<String> {
+        val poligono  = wktReader.read(wkt)
+        val centroid  = poligono.centroid.coordinate
+        val areaTotal = calcularAreaHa(wkt)
+        val nFull     = (areaTotal / areaObjetivoHa).toInt()
+        if (nFull < 1) return listOf(wkt)
+
+        val rotInv   = AffineTransformation.rotationInstance(-anguloRad, centroid.x, centroid.y)
+        val rotDir   = AffineTransformation.rotationInstance( anguloRad, centroid.x, centroid.y)
+        val polRot   = rotInv.transform(poligono.copy())
+        val env      = polRot.envelopeInternal
+        // Convertir área en grados² a hectáreas usando latitud real del centroide
+        val factorHa = 111_320.0 * (111_320.0 * cos(Math.toRadians(centroid.y))) / 10_000.0
+
+        val resultado = mutableListOf<String>()
+        var yMin      = env.minY
+
+        for (i in 0 until nFull) {
+            // Búsqueda binaria: hallar yCut donde área(polígono ∩ banda[yMin, yCut]) = areaObjetivoHa
+            var yLow  = yMin
+            var yHigh = env.maxY
+            repeat(35) {
+                val yMid = (yLow + yHigh) / 2.0
+                val area = polRot.intersection(makeBand(env, yMin, yMid)).area * factorHa
+                if (area < areaObjetivoHa) yLow = yMid else yHigh = yMid
+            }
+            val yCut  = (yLow + yHigh) / 2.0
+            val pieza = polRot.intersection(makeBand(env, yMin, yCut))
+            agregarPiezasPoligonales(pieza, rotDir, factorHa, resultado)
+            yMin = yCut
+        }
+
+        // Residual: todo lo que queda por encima del último corte
+        val residual = polRot.intersection(makeBand(env, yMin, env.maxY + 0.001))
+        agregarPiezasPoligonales(residual, rotDir, factorHa, resultado)
+
+        return resultado
+    }
+
+    /** Descompone el resultado de una intersección (que puede ser Multi/GeometryCollection
+     * cuando el polígono base es cóncavo) en piezas Polygon individuales, descartando
+     * fragmentos sin área (slivers de precisión). */
+    private fun agregarPiezasPoligonales(
+        geom: Geometry, rotDir: AffineTransformation, factorHa: Double, resultado: MutableList<String>
+    ) {
+        if (geom.isEmpty) return
+        val umbralHa = 0.001
+        for (i in 0 until geom.numGeometries) {
+            val parte = geom.getGeometryN(i)
+            if (parte.geometryType != "Polygon" || parte.isEmpty) continue
+            if (parte.area * factorHa < umbralHa) continue
+            resultado.add(wktWriter.write(rotDir.transform(parte.copy())))
+        }
+    }
+
+    private fun makeBand(env: Envelope, yMin: Double, yMax: Double): Polygon =
+        factory.createPolygon(arrayOf(
+            Coordinate(env.minX - 0.001, yMin),
+            Coordinate(env.maxX + 0.001, yMin),
+            Coordinate(env.maxX + 0.001, yMax),
+            Coordinate(env.minX - 0.001, yMax),
+            Coordinate(env.minX - 0.001, yMin)
+        ))
+
+    /**
      * Divide polígono en N franjas en la dirección indicada por [anguloRad].
      * El ángulo es el bearing de la línea guía trazada por el usuario (en radianes desde el norte).
      * Las franjas corren paralelas a esa dirección; los cortes son perpendiculares.
@@ -145,9 +214,11 @@ class GeometryService {
         val env  = polRot.envelopeInternal
         val paso = (env.maxY - env.minY) / n
 
-        val rotDir = AffineTransformation.rotationInstance(anguloRad, centroid.x, centroid.y)
+        val rotDir   = AffineTransformation.rotationInstance(anguloRad, centroid.x, centroid.y)
+        val factorHa = 111_320.0 * (111_320.0 * cos(Math.toRadians(centroid.y))) / 10_000.0
 
-        return (0 until n).mapNotNull { i ->
+        val resultado = mutableListOf<String>()
+        for (i in 0 until n) {
             val yMin  = env.minY + i * paso
             val yMax  = env.minY + (i + 1) * paso
             val banda = factory.createPolygon(arrayOf(
@@ -158,8 +229,9 @@ class GeometryService {
                 Coordinate(env.minX - 0.001, yMin)
             ))
             val inter = polRot.intersection(banda)
-            if (!inter.isEmpty) wktWriter.write(rotDir.transform(inter.copy())) else null
+            agregarPiezasPoligonales(inter, rotDir, factorHa, resultado)
         }
+        return resultado
     }
 
     private fun List<PuntoGps>.toCoordinates() =

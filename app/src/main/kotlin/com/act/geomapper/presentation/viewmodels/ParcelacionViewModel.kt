@@ -15,7 +15,7 @@ import org.locationtech.jts.geom.PrecisionModel
 import org.locationtech.jts.io.WKTReader
 import org.locationtech.jts.io.WKTWriter
 
-enum class ModoParcelacion { IDLE, CORTE, VIA, SUBDIVISION, SUBDIVISION_LINEA }
+enum class ModoParcelacion { IDLE, CORTE, VIA, VIA_LINEA, SUBDIVISION, SUBDIVISION_LINEA }
 
 enum class TipoSubdivision { FRENTE_OBJETIVO, POR_AREA, PARTES_IGUALES }
 
@@ -27,17 +27,19 @@ data class SubparcelaEditable(
 )
 
 data class ParcelacionState(
-    val predioBase       : Predio?                    = null,
-    val segmentos        : List<SegmentoInfo>          = emptyList(),
-    val areaHa           : Double                     = 0.0,
-    val subparcelas      : List<String>               = emptyList(),   // WKTs para preview en mapa
-    val subparcelasInfo  : List<SubparcelaEditable>   = emptyList(),   // nombres/atributos editables
-    val pendienteGuardar : Boolean                    = false,
-    val puntosLinea      : List<Pair<Double, Double>> = emptyList(),
-    val anchoViaMetros   : Double                     = 10.0,
-    val modo             : ModoParcelacion            = ModoParcelacion.IDLE,
-    val procesando       : Boolean                    = false,
-    val error            : String?                    = null
+    val predioBase            : Predio?                    = null,
+    val segmentos             : List<SegmentoInfo>          = emptyList(),
+    val areaHa                : Double                     = 0.0,
+    val subparcelas           : List<String>               = emptyList(),   // WKTs para preview en mapa
+    val subparcelasInfo       : List<SubparcelaEditable>   = emptyList(),   // nombres/atributos editables
+    val pendienteGuardar      : Boolean                    = false,
+    val esVia                 : Boolean                    = false,         // resultado de trazado de vía (sin etiquetas)
+    val puntosLinea           : List<Pair<Double, Double>> = emptyList(),
+    val anchoViaMetros        : Double                     = 10.0,
+    val modo                  : ModoParcelacion            = ModoParcelacion.IDLE,
+    val procesando            : Boolean                    = false,
+    val error                 : String?                    = null,
+    val idOriginalParaEliminar: Long?                      = null  // id DB del predio base original (antes de cortes sucesivos)
 )
 
 class ParcelacionViewModel(
@@ -65,14 +67,15 @@ class ParcelacionViewModel(
         val segmentos = geometryService.calcularDistanciasPorLado(wkt)
         val areaHa   = geometryService.calcularAreaHa(wkt)
         _state.update { it.copy(
-            predioBase       = predio,
-            segmentos        = segmentos,
-            areaHa           = areaHa,
-            subparcelas      = emptyList(),
-            subparcelasInfo  = emptyList(),
-            pendienteGuardar = false,
-            puntosLinea      = emptyList(),
-            modo             = ModoParcelacion.IDLE
+            predioBase             = predio,
+            segmentos              = segmentos,
+            areaHa                 = areaHa,
+            subparcelas            = emptyList(),
+            subparcelasInfo        = emptyList(),
+            pendienteGuardar       = false,
+            puntosLinea            = emptyList(),
+            modo                   = ModoParcelacion.IDLE,
+            idOriginalParaEliminar = null
         ) }
     }
 
@@ -95,17 +98,20 @@ class ParcelacionViewModel(
                 geometryService.cortarConLinea(predioWkt, lineaWkt)
             }.onSuccess { partes ->
                 val sufijos = listOf("_A", "_B")
-                // Los resultados van al mismo proyecto del polígono base, no al seleccionado en la app
                 pendingProyectoId = base.proyectoId.takeIf { it > 0L } ?: proyectoId
                 pendingNombreBase = nombreOriginal
                 pendingSufijos    = sufijos
+                // Preservar el id original solo la primera vez (si ya hay uno guardado, mantenerlo)
+                val idOriginal = _state.value.idOriginalParaEliminar
+                    ?: base.id.takeIf { it > 0L }
                 val infos = buildInfos(partes, nombreOriginal, sufijos)
                 _state.update { it.copy(
-                    subparcelas      = partes,
-                    subparcelasInfo  = infos,
-                    procesando       = false,
-                    modo             = ModoParcelacion.IDLE,
-                    pendienteGuardar = true
+                    subparcelas            = partes,
+                    subparcelasInfo        = infos,
+                    procesando             = false,
+                    modo                   = ModoParcelacion.IDLE,
+                    pendienteGuardar       = true,
+                    idOriginalParaEliminar = idOriginal
                 ) }
             }.onFailure { e -> _state.update { it.copy(error = e.message, procesando = false) } }
         }
@@ -116,6 +122,9 @@ class ParcelacionViewModel(
 
     fun iniciarVia() = _state.update { it.copy(modo = ModoParcelacion.VIA, puntosLinea = emptyList()) }
 
+    /** El usuario confirmó el ancho y va a trazar el eje — colapsa la card de config */
+    fun prepararVia() = _state.update { it.copy(modo = ModoParcelacion.VIA_LINEA) }
+
     fun finalizarVia(proyectoId: Long, nombreBase: String) {
         val base   = _state.value.predioBase
         val puntos = _state.value.puntosLinea
@@ -125,23 +134,32 @@ class ParcelacionViewModel(
             runCatching {
                 val lineaWkt    = puntosALineaWkt(puntos)
                 val anchoGrados = _state.value.anchoViaMetros / 111_320.0
-                val bufferWkt  = geometryService.aplicarBuffer(lineaWkt, anchoGrados / 2)
-                // Recortar al límite del polígono base — la vía no debe sobresalir del predio
-                val bufferGeom = geometryService.wktAGeometria(bufferWkt)
-                geometryService.geometriaAWkt(base!!.geometry.intersection(bufferGeom))
-            }.onSuccess { viaWkt ->
-                val nombreVia = "${nombreBase}_via"
-                val sufijos   = listOf("")
+                val bufferWkt   = geometryService.aplicarBuffer(lineaWkt, anchoGrados / 2)
+                val bufferGeom  = geometryService.wktAGeometria(bufferWkt)
+                // Corredor de la vía (intersection)
+                val viaGeom = base!!.geometry.intersection(bufferGeom)
+                val viaWkt  = geometryService.geometriaAWkt(viaGeom)
+                // Lotes que quedan a los lados (difference)
+                val restoGeom = base.geometry.difference(bufferGeom)
+                val restoWkts = (0 until restoGeom.numGeometries)
+                    .map { restoGeom.getGeometryN(it) }
+                    .filter { it.geometryType == "Polygon" && !it.isEmpty && it.area > 0 }
+                    .map { geometryService.geometriaAWkt(it) }
+                listOf(viaWkt) + restoWkts
+            }.onSuccess { todasPartes ->
+                val restoSize = todasPartes.size - 1
+                val sufijos   = listOf("_via") + ('A'..'Z').take(restoSize).map { "_$it" }
                 pendingProyectoId = base?.proyectoId?.takeIf { it > 0L } ?: proyectoId
-                pendingNombreBase = nombreVia
+                pendingNombreBase = nombreBase
                 pendingSufijos    = sufijos
-                val infos = buildInfos(listOf(viaWkt), nombreVia, sufijos)
+                val infos = buildInfos(todasPartes, nombreBase, sufijos)
                 _state.update { it.copy(
-                    subparcelas      = listOf(viaWkt),
+                    subparcelas      = todasPartes,
                     subparcelasInfo  = infos,
                     procesando       = false,
                     modo             = ModoParcelacion.IDLE,
-                    pendienteGuardar = true
+                    pendienteGuardar = true,
+                    esVia            = true
                 ) }
             }.onFailure { e -> _state.update { it.copy(error = e.message, procesando = false) } }
         }
@@ -170,25 +188,30 @@ class ParcelacionViewModel(
         // Ángulo de la línea guía: bearing desde el primer al último punto
         val (lat1, lon1) = puntos.first()
         val (lat2, lon2) = puntos.last()
-        val anguloRad = atan2(lon2 - lon1, lat2 - lat1)  // en el plano lat/lon de grados
+        val anguloRad = atan2(lat2 - lat1, lon2 - lon1)  // ángulo estándar: atan2(dy, dx) en sistema lon=X lat=Y
 
         viewModelScope.launch {
             runCatching {
                 val tipo  = pendingTipoSubdiv
                 val valor = pendingValorSubdiv
-                val n = when (tipo) {
-                    TipoSubdivision.PARTES_IGUALES  -> valor.toInt()
-                    TipoSubdivision.POR_AREA        -> {
-                        val total = geometryService.calcularAreaHa(wkt)
-                        (total / valor).toInt().coerceAtLeast(2)
+                when (tipo) {
+                    TipoSubdivision.POR_AREA -> {
+                        // Piezas de área exacta + residual
+                        geometryService.dividirPorAreaObjetivo(wkt, valor, anguloRad)
                     }
-                    TipoSubdivision.FRENTE_OBJETIVO -> {
-                        val segs   = geometryService.calcularDistanciasPorLado(wkt)
-                        val frente = segs.maxOf { it.distanciaMetros }
-                        (frente / valor).toInt().coerceAtLeast(2)
+                    else -> {
+                        val n = when (tipo) {
+                            TipoSubdivision.PARTES_IGUALES  -> valor.toInt()
+                            TipoSubdivision.FRENTE_OBJETIVO -> {
+                                val segs   = geometryService.calcularDistanciasPorLado(wkt)
+                                val frente = segs.maxOf { it.distanciaMetros }
+                                (frente / valor).toInt().coerceAtLeast(2)
+                            }
+                            else -> 2
+                        }
+                        geometryService.dividirEnFranjasAngulado(wkt, n, anguloRad)
                     }
                 }
-                geometryService.dividirEnFranjasAngulado(wkt, n, anguloRad)
             }.onSuccess { partes ->
                 val sufijos = partes.indices.map { " ${it + 1}" }
                 pendingProyectoId = base.proyectoId.takeIf { it > 0L } ?: proyectoId
@@ -216,17 +239,71 @@ class ParcelacionViewModel(
         }
     }
 
+    // ── Seleccionar subparcela de un corte para cortarla de nuevo ────────────
+    fun seleccionarSubparcelaComoBase(index: Int) {
+        val wkt     = _state.value.subparcelas.getOrNull(index) ?: return
+        val otros   = _state.value.subparcelas.filterIndexed   { i, _ -> i != index }
+        val otrosInfo = _state.value.subparcelasInfo.filterIndexed { i, _ -> i != index }
+        val info    = _state.value.subparcelasInfo.getOrNull(index)
+        val geom    = runCatching { geometryService.wktAGeometria(wkt) }.getOrNull() ?: return
+        val nombre  = info?.nombre?.ifBlank { null } ?: "${pendingNombreBase}_${index + 1}"
+        val tempPredio = Predio(
+            id         = 0L,
+            proyectoId = pendingProyectoId,
+            nombre     = nombre,
+            geometry   = geom,
+            area       = info?.areaHa ?: 0.0
+        )
+        val segmentos = geometryService.calcularDistanciasPorLado(wkt)
+        val areaHa    = geometryService.calcularAreaHa(wkt)
+        val origId    = _state.value.idOriginalParaEliminar
+
+        viewModelScope.launch {
+            // Guardar los demás fragmentos en DB (quedan visibles como contexto)
+            otros.forEachIndexed { i, otroWkt ->
+                runCatching {
+                    val oi = otrosInfo.getOrElse(i) { SubparcelaEditable(nombre = "${pendingNombreBase}_${i + 1}") }
+                    guardarPredio(Predio(
+                        proyectoId  = pendingProyectoId,
+                        nombre      = oi.nombre.ifBlank { "${pendingNombreBase}_${i + 1}" },
+                        propietario = oi.propietario,
+                        geometry    = geometryService.wktAGeometria(otroWkt),
+                        area        = geometryService.calcularAreaHa(otroWkt),
+                        perimetro   = geometryService.calcularPerimetroM(otroWkt)
+                    ))
+                }
+            }
+            // Eliminar el polígono original de DB (ya está reemplazado por los fragmentos)
+            if (origId != null && origId > 0L) eliminarPredio(origId)
+
+            _state.update { it.copy(
+                predioBase             = tempPredio,
+                segmentos              = segmentos,
+                areaHa                 = areaHa,
+                subparcelas            = emptyList(),
+                subparcelasInfo        = emptyList(),
+                pendienteGuardar       = false,
+                puntosLinea            = emptyList(),
+                modo                   = ModoParcelacion.IDLE,
+                idOriginalParaEliminar = null  // original ya eliminado
+            ) }
+        }
+    }
+
     // ── Confirmar / Deshacer ──────────────────────────────────────────────────
     fun confirmarGuardado() {
         viewModelScope.launch {
-            val baseId = _state.value.predioBase?.id
+            // Usa el id original rastreado; si no hay (cortes sucesivos), usa predioBase.id
+            val elimId = _state.value.idOriginalParaEliminar
+                ?: _state.value.predioBase?.id
             guardarResultados()
-            // Eliminar el polígono original — queda reemplazado por los resultantes
-            if (baseId != null && baseId > 0L) eliminarPredio(baseId)
+            if (elimId != null && elimId > 0L) eliminarPredio(elimId)
+            // subparcelas se mantienen para que las etiquetas de área/distancia sigan visibles.
+            // Se limpian cuando el usuario selecciona un nuevo polígono o cancela.
             _state.update { it.copy(
-                subparcelas      = emptyList(),
-                subparcelasInfo  = emptyList(),
-                pendienteGuardar = false
+                pendienteGuardar       = false,
+                esVia                  = false,
+                idOriginalParaEliminar = null
             ) }
         }
     }
@@ -235,7 +312,9 @@ class ParcelacionViewModel(
         _state.update { it.copy(
             subparcelas      = emptyList(),
             subparcelasInfo  = emptyList(),
-            pendienteGuardar = false
+            pendienteGuardar = false,
+            esVia            = false
+            // idOriginalParaEliminar se mantiene para el próximo intento de corte
         ) }
     }
 
@@ -243,11 +322,12 @@ class ParcelacionViewModel(
         pendingTipoSubdiv  = TipoSubdivision.PARTES_IGUALES
         pendingValorSubdiv = 2.0
         _state.update { it.copy(
-            modo             = ModoParcelacion.IDLE,
-            puntosLinea      = emptyList(),
-            subparcelas      = emptyList(),
-            subparcelasInfo  = emptyList(),
-            pendienteGuardar = false
+            modo                   = ModoParcelacion.IDLE,
+            puntosLinea            = emptyList(),
+            subparcelas            = emptyList(),
+            subparcelasInfo        = emptyList(),
+            pendienteGuardar       = false,
+            idOriginalParaEliminar = null
         ) }
     }
 

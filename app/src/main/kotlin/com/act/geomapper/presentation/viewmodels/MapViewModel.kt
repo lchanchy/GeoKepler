@@ -27,7 +27,11 @@ data class MapUiState(
     val capturaRecuperada   : Int            = 0,
     val editingPredio       : Predio?        = null,
     val navegacionDestino   : PuntoGps?      = null,
-    val error               : String?        = null
+    val error               : String?        = null,
+    // Última posición conocida del mapa — se restaura al recrear MapScreen
+    val lastMapLat          : Double         = 4.6097,
+    val lastMapLon          : Double         = -74.0817,
+    val lastMapZoom         : Double         = 16.0
 )
 
 class MapViewModel(
@@ -66,6 +70,9 @@ class MapViewModel(
 
     fun centrarEnUbicacion() = _uiState.update { it.copy(centrarEnGps = true) }
     fun centradoConsumido()  = _uiState.update { it.copy(centrarEnGps = false) }
+
+    fun guardarPosicion(lat: Double, lon: Double, zoom: Double) =
+        _uiState.update { it.copy(lastMapLat = lat, lastMapLon = lon, lastMapZoom = zoom) }
 
     fun centrarEnCoordenada(lat: Double, lon: Double) {
         _uiState.update { it.copy(

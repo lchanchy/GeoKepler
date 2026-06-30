@@ -93,12 +93,13 @@ fun MapScreen(
     }
 
     val mapView = remember {
+        val initState = viewModel.uiState.value
         MapView(context).apply {
             setTileSource(org.osmdroid.tileprovider.tilesource.TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
-            controller.setZoom(16.0)
-            controller.setCenter(GeoPoint(4.6097, -74.0817))
+            controller.setZoom(initState.lastMapZoom)
+            controller.setCenter(GeoPoint(initState.lastMapLat, initState.lastMapLon))
             overlays.add(RotationGestureOverlay(this).also { it.isEnabled = true })
             overlays.add(object : org.osmdroid.views.overlay.Overlay() {
                 override fun onSingleTapConfirmed(e: MotionEvent, mv: MapView): Boolean {
@@ -130,7 +131,12 @@ fun MapScreen(
             }
         }
         mapView.addMapListener(listener)
-        onDispose { mapView.removeMapListener(listener) }
+        onDispose {
+            mapView.removeMapListener(listener)
+            // Guardar posición para restaurarla si MapScreen se recrea (ej. al volver de Parcelación)
+            val c = mapView.mapCenter as GeoPoint
+            viewModel.guardarPosicion(c.latitude, c.longitude, mapView.zoomLevelDouble)
+        }
     }
 
     // Centrar en GPS al pedirlo
@@ -433,11 +439,11 @@ private fun dibujarBorrador(mapView: MapView, state: MapUiState) {
     // Marcadores profesionales para puntos en curso
     puntos.forEachIndexed { i, p ->
         Marker(mapView).apply {
-            id       = TAG_CAPTURA
-            position = GeoPoint(p.latitud, p.longitud)
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)  // centrado para el dot
-            title    = "Punto ${i + 1}"
-            icon     = crearPuntoDot(mapView.context)   // círculo pequeño, no pin grande
+            id          = TAG_CAPTURA
+            position    = GeoPoint(p.latitud, p.longitud)
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            icon        = crearPuntoDot(mapView.context)
+            infoWindow  = null
             mapView.overlays.add(this)
         }
     }
@@ -498,10 +504,11 @@ private fun dibujarEntidadesGuardadas(
             when (geom.geometryType) {
                 "Point" -> {
                     Marker(mapView).apply {
-                        id       = TAG_GUARDADA
-                        position = GeoPoint(geom.coordinate.y, geom.coordinate.x)
+                        id         = TAG_GUARDADA
+                        position   = GeoPoint(geom.coordinate.y, geom.coordinate.x)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        icon     = crearPuntoDot(mapView.context, AColor.parseColor("#1A1A1A"), 16)
+                        icon       = crearPuntoDot(mapView.context, AColor.parseColor("#1A1A1A"), 16)
+                        infoWindow = null
                         mapView.overlays.add(this)
                     }
                 }
@@ -529,10 +536,11 @@ private fun dibujarEntidadesGuardadas(
                         val coords = geom.coordinates
                         val mid    = coords[coords.size / 2]
                         Marker(mapView).apply {
-                            id       = TAG_GUARDADA
-                            position = GeoPoint(mid.y, mid.x)
+                            id         = TAG_GUARDADA
+                            position   = GeoPoint(mid.y, mid.x)
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            icon     = crearEtiquetaTexto(mapView.context, textoLong)
+                            icon       = crearEtiquetaTexto(mapView.context, textoLong)
+                            infoWindow = null
                             mapView.overlays.add(this)
                         }
                     }
@@ -617,6 +625,7 @@ private fun crearEtiquetaTexto(context: android.content.Context, texto: String):
 
 /** Marker que solo se dibuja cuando el zoom del mapa es ≥ minZoom */
 private class MinZoomMarker(mapView: MapView, private val minZoom: Double) : Marker(mapView) {
+    init { infoWindow = null }
     override fun draw(c: android.graphics.Canvas, osmv: MapView, shadow: Boolean) {
         if (osmv.zoomLevelDouble >= minZoom) super.draw(c, osmv, shadow)
     }
