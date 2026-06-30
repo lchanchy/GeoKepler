@@ -509,7 +509,7 @@ private fun dibujarEntidadesGuardadas(
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         icon       = crearPuntoDot(mapView.context, AColor.parseColor("#1A1A1A"), 16)
                         infoWindow = null
-                        mapView.overlays.add(this)
+                        mapView.overlays.add(0, this)  // detrás del overlay de captura
                     }
                 }
                 "LineString" -> {
@@ -519,7 +519,7 @@ private fun dibujarEntidadesGuardadas(
                         setPoints(geom.coordinates.map { GeoPoint(it.y, it.x) })
                         outlinePaint.color       = AColor.parseColor("#1565C0")
                         outlinePaint.strokeWidth = 3f
-                        mapView.overlays.add(this)
+                        mapView.overlays.add(0, this)
                     }
                     // Etiqueta de longitud en el punto medio de la línea
                     val longM = predio?.perimetro ?: 0.0
@@ -541,7 +541,7 @@ private fun dibujarEntidadesGuardadas(
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             icon       = crearEtiquetaTexto(mapView.context, textoLong)
                             infoWindow = null
-                            mapView.overlays.add(this)
+                            mapView.overlays.add(0, this)
                         }
                     }
                 }
@@ -556,7 +556,7 @@ private fun dibujarEntidadesGuardadas(
                         fillPaint.color          = if (conRelleno) AColor.argb(70, 255, 193, 7) else AColor.TRANSPARENT
                         outlinePaint.color       = AColor.parseColor("#E65100")
                         outlinePaint.strokeWidth = 3f
-                        mapView.overlays.add(this)
+                        mapView.overlays.add(0, this)
                     }
 
                     // ── Etiqueta de área (zoom ≥ 13) ─────────────────────────
@@ -578,7 +578,7 @@ private fun dibujarEntidadesGuardadas(
                             position = GeoPoint(centroid.y, centroid.x)
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             icon     = crearEtiquetaTexto(mapView.context, textoArea)
-                            mapView.overlays.add(this)
+                            mapView.overlays.add(0, this)
                         }
                     }
 
