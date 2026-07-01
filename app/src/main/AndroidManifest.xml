@@ -43,7 +43,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|uiMode|keyboardHidden">
             <intent-filter>
@@ -60,6 +60,7 @@
                 <data android:mimeType="application/vnd.google-earth.kml+xml" />
                 <data android:mimeType="application/gpx+xml" />
                 <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/tiff" />
                 <data android:mimeType="text/xml" />
                 <data android:mimeType="application/xml" />
                 <data android:mimeType="application/octet-stream" />

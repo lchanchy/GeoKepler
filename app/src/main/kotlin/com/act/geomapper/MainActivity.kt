@@ -42,13 +42,19 @@ import com.act.geomapper.presentation.components.*
 import com.act.geomapper.presentation.screens.*
 import com.act.geomapper.presentation.viewmodels.*
 import com.act.geomapper.security.RootDetector
+import com.act.geomapper.data.gnss.GnssBluetoothService
+import com.act.geomapper.data.gnss.GnssLoggerService
+import com.act.geomapper.data.gnss.NtripClient
 import com.act.geomapper.ui.theme.GeoMapperTheme
 
 class MainActivity : ComponentActivity() {
 
     // ── Dependencias manuales (YAGNI — sin Hilt) ─────────────────────────────
-    private val db              by lazy { AppDatabase.getInstance(this) }
-    private val gpsService      by lazy { GpsService(this) }
+    private val db                   by lazy { AppDatabase.getInstance(this) }
+    private val gpsService           by lazy { GpsService(this) }
+    private val gnssBluetoothService by lazy { GnssBluetoothService(this) }
+    private val ntripClient          by lazy { NtripClient(gnssBluetoothService) }
+    private val gnssLoggerService    by lazy { GnssLoggerService(this, gnssBluetoothService) }
     private val geometryService by lazy { GeometryService() }
     private val proyectoRepo    by lazy { ProyectoRepositoryImpl(db.proyectoDao()) }
     private val predioRepo      by lazy { PredioRepositoryImpl(db.predioDao()) }
@@ -93,10 +99,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()   // la app dibuja bajo status bar y nav bar
 
-        permisosLauncher.launch(arrayOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ))
+        val permisos = buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
+        }
+        permisosLauncher.launch(permisos.toTypedArray())
 
         // Iniciar ForegroundService para mantener GPS vivo en background
         GeoKeplerService.iniciar(this)
@@ -145,6 +155,9 @@ class MainActivity : ComponentActivity() {
                     predioVM      = predioViewModel,
                     parcelacionVM = parcelacionViewModel,
                     importVM      = importViewModel,
+                    gnssService   = gnssBluetoothService,
+                    ntrip         = ntripClient,
+                    logger        = gnssLoggerService,
                     onAbrirPicker = {
                         safLauncher.launch(arrayOf(
                             "application/json", "*/*",
@@ -197,6 +210,13 @@ class MainActivity : ComponentActivity() {
         outState.putLong("proyecto_id",
             proyectoViewModel.uiState.value.proyectoSeleccionadoId ?: -1L)
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        gnssLoggerService.release()
+        ntripClient.release()
+        gnssBluetoothService.release()
+    }
 }
 
 // ── Rutas de navegación simple (sin Nav Component para evitar overhead) ───────
@@ -211,6 +231,9 @@ private fun AppRoot(
     predioVM     : PredioViewModel,
     parcelacionVM: ParcelacionViewModel,
     importVM     : ImportViewModel,
+    gnssService  : com.act.geomapper.data.gnss.GnssBluetoothService,
+    ntrip        : NtripClient,
+    logger       : GnssLoggerService,
     onAbrirPicker: () -> Unit
 ) {
     var pantalla            by remember { mutableStateOf(Pantalla.SPLASH) }
@@ -230,6 +253,8 @@ private fun AppRoot(
                 val proyState    by proyectoVM.uiState.collectAsStateWithLifecycle()
                 val settings     by settingsVM.settings.collectAsStateWithLifecycle()
                 val mapStateParc by mapVM.uiState.collectAsStateWithLifecycle()
+                val geoPdfParc        by importVM.geoPdfData.collectAsStateWithLifecycle()
+                val geoPdfVisibleParc by importVM.geoPdfVisible.collectAsStateWithLifecycle()
                 ParcelacionScreen(
                     vm            = parcelacionVM,
                     poligonos     = predioState.predios,
@@ -239,11 +264,16 @@ private fun AppRoot(
                     estadoGps     = mapStateParc.estadoGps,
                     areaUnit      = settings.areaUnit,
                     distanceUnit  = settings.distanceUnit,
+                    geoPdfData    = geoPdfParc,
+                    geoPdfVisible = geoPdfVisibleParc,
                     onBack        = { pantalla = Pantalla.MAPA; predioParaParcelar = null }
                 )
             }
             Pantalla.MAPA          -> MapaApp(
                 proyectoVM, mapVM, settingsVM, predioVM, importVM, onAbrirPicker,
+                gnssService     = gnssService,
+                ntrip           = ntrip,
+                logger          = logger,
                 basemapActual   = basemapActual,
                 onBasemapChange = { basemapActual = it },
                 onParcelar      = { predio -> predioParaParcelar = predio; pantalla = Pantalla.PARCELACION }
@@ -261,17 +291,30 @@ private fun MapaApp(
     predioVM        : PredioViewModel,
     importVM        : ImportViewModel,
     onAbrirPicker   : () -> Unit,
+    gnssService     : com.act.geomapper.data.gnss.GnssBluetoothService,
+    ntrip           : NtripClient,
+    logger          : GnssLoggerService,
     basemapActual   : com.act.geomapper.presentation.components.Basemap,
     onBasemapChange : (com.act.geomapper.presentation.components.Basemap) -> Unit,
     onParcelar      : (com.act.geomapper.domain.models.Predio) -> Unit,
     navegar         : (Pantalla) -> Unit
 ) {
-    val proyState   by proyectoVM.uiState.collectAsStateWithLifecycle()
-    val mapState    by mapVM.uiState.collectAsStateWithLifecycle()
-    val settings    by settingsVM.settings.collectAsStateWithLifecycle()
-    val predioState by predioVM.uiState.collectAsStateWithLifecycle()
-    val strings     = com.act.geomapper.ui.theme.LocalStrings.current  // para usar en LaunchedEffect
-    val importState by importVM.state.collectAsStateWithLifecycle()
+    val proyState     by proyectoVM.uiState.collectAsStateWithLifecycle()
+    val mapState      by mapVM.uiState.collectAsStateWithLifecycle()
+    val settings      by settingsVM.settings.collectAsStateWithLifecycle()
+    val predioState   by predioVM.uiState.collectAsStateWithLifecycle()
+    val strings       = com.act.geomapper.ui.theme.LocalStrings.current
+    val importState   by importVM.state.collectAsStateWithLifecycle()
+    val estadoBt          by gnssService.estado.collectAsStateWithLifecycle()
+    val dispositivosBt    by gnssService.dispositivosEmparejados.collectAsStateWithLifecycle()
+    val estadoNtrip       by ntrip.estado.collectAsStateWithLifecycle()
+    val bytesNtrip        by ntrip.bytesRecibidos.collectAsStateWithLifecycle()
+    val velocidadNtrip    by ntrip.velocidadKbs.collectAsStateWithLifecycle()
+    val estadoLogger      by logger.estado.collectAsStateWithLifecycle()
+    val ultimoArchLogger  by logger.ultimoArchivo.collectAsStateWithLifecycle()
+    val geoPdfData        by importVM.geoPdfData.collectAsStateWithLifecycle()
+    val geoPdfVisible     by importVM.geoPdfVisible.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val proyectoActivo = proyState.proyectos.firstOrNull { it.id == proyState.proyectoSeleccionadoId }
 
@@ -346,20 +389,52 @@ private fun MapaApp(
             predios          = predioState.predios,
             ocultos          = predioState.ocultos,
             redrawVersion    = mapRedrawVersion,
+            geoPdfData       = geoPdfData,
+            geoPdfVisible    = geoPdfVisible,
             onGuardarEdicion = { id, geom -> predioVM.actualizarGeometria(id, geom) },
             modifier         = Modifier.fillMaxSize()
         )
 
         // Header card superior
         HeaderCard(
-            estadoGps      = mapState.estadoGps,
-            proyectoNombre = proyectoActivo?.nombre,
-            onProyectos    = { mostrarListaProy = true },
-            onCapas        = { mostrarCapas = true },
-            onBase         = { mostrarBasemap = !mostrarBasemap },
-            onImportar     = { mostrarImport = true },
-            onConfig       = { navegar(Pantalla.CONFIGURACION) },
-            modifier       = Modifier.align(Alignment.TopCenter)
+            estadoGps            = mapState.estadoGps,
+            estadoBt             = estadoBt,
+            estadoNtrip          = estadoNtrip,
+            estadoLogger         = estadoLogger,
+            ultimoArchivoLogger  = ultimoArchLogger,
+            bytesRecibidosNtrip  = bytesNtrip,
+            velocidadNtrip       = velocidadNtrip,
+            dispositivosBt       = dispositivosBt,
+            onBuscarDispositivos = { gnssService.cargarEmparejados() },
+            onConectarBt         = { device -> gnssService.conectar(device) },
+            onDesconectarBt      = { gnssService.desconectar() },
+            onConectarNtrip      = { cfg -> ntrip.conectar(cfg) },
+            onDesconectarNtrip   = { ntrip.desconectar() },
+            onIniciarGrabacion   = { logger.iniciarGrabacion() },
+            onDetenerGrabacion   = { logger.detenerGrabacion() },
+            onCompartirGrabacion = {
+                ultimoArchLogger?.takeIf { it.exists() }?.let { file ->
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context, "${context.packageName}.provider", file
+                    )
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Grabación GNSS NMEA")
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(
+                        android.content.Intent.createChooser(intent, "Compartir ${file.name}")
+                    )
+                }
+            },
+            proyectoNombre       = proyectoActivo?.nombre,
+            onProyectos          = { mostrarListaProy = true },
+            onCapas              = { mostrarCapas = true },
+            onBase               = { mostrarBasemap = !mostrarBasemap },
+            onImportar           = { mostrarImport = true },
+            onConfig             = { navegar(Pantalla.CONFIGURACION) },
+            modifier             = Modifier.align(Alignment.TopCenter)
         )
 
         // Panel de basemap — se abre con el botón BaseMap del header, sin botón propio
@@ -473,6 +548,18 @@ private fun MapaApp(
             onToggleTodosVisibles = predioVM::toggleTodosVisibles,
             onEditarAtributos     = predioVM::actualizarAtributos,
             onNavegar             = { lat, lon -> mapVM.iniciarNavegacion(lat, lon) },
+            geoPdfData            = geoPdfData,
+            geoPdfVisible         = geoPdfVisible,
+            onToggleGeoPdfVisible = { importVM.toggleGeoPdfVisible() },
+            onZoomGeoPdf          = {
+                geoPdfData?.let { pdf ->
+                    val lat = (pdf.norte + pdf.sur)  / 2
+                    val lon = (pdf.este  + pdf.oeste) / 2
+                    mapVM.centrarEnCoordenada(lat, lon)
+                }
+                mostrarCapas = false
+            },
+            onEliminarGeoPdf      = { importVM.cerrarGeoPdf() },
             onDismiss             = { mostrarCapas = false }
         )
     }

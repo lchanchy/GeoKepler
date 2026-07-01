@@ -38,6 +38,8 @@ import com.act.geomapper.domain.models.Predio
 import com.act.geomapper.presentation.components.Basemap
 import com.act.geomapper.presentation.components.NorthArrow
 import com.act.geomapper.presentation.components.rememberAzimut
+import com.act.geomapper.data.geopdf.GeoPdfData
+import com.act.geomapper.presentation.overlay.GeoPdfOverlay
 import com.act.geomapper.presentation.overlay.crearPuntoDot
 import com.act.geomapper.presentation.components.toTileSource
 import com.act.geomapper.presentation.viewmodels.ModoParcelacion
@@ -77,6 +79,8 @@ fun ParcelacionScreen(
     estadoGps     : com.act.geomapper.domain.models.EstadoGps = com.act.geomapper.domain.models.EstadoGps(),
     areaUnit      : com.act.geomapper.data.settings.AreaUnit     = com.act.geomapper.data.settings.AreaUnit.HECTARES,
     distanceUnit  : com.act.geomapper.data.settings.DistanceUnit = com.act.geomapper.data.settings.DistanceUnit.METERS,
+    geoPdfData    : GeoPdfData?                                  = null,
+    geoPdfVisible : Boolean                                      = true,
     onBack        : () -> Unit
 ) {
     val state  by vm.state.collectAsStateWithLifecycle()
@@ -166,6 +170,12 @@ fun ParcelacionScreen(
         mapView.invalidate()
     }
 
+    LaunchedEffect(geoPdfData, geoPdfVisible) {
+        mapView.overlays.removeAll { it is GeoPdfOverlay }
+        if (geoPdfData != null && geoPdfVisible) mapView.overlays.add(0, GeoPdfOverlay(geoPdfData))
+        mapView.invalidate()
+    }
+
     // Centrar y dibujar polígono al seleccionar o cambiar relleno
     LaunchedEffect(state.predioBase, conRelleno) {
         state.predioBase?.let { predio ->
@@ -179,7 +189,8 @@ fun ParcelacionScreen(
     val prediosSnapRef = androidx.compose.runtime.rememberUpdatedState(poligonos)
     val modoSnapRef    = androidx.compose.runtime.rememberUpdatedState(state.modo)
 
-    // Rastrear el centro del mapa para la diana y el rubber-band; snap automático a puntos
+    // Rastrear el centro del mapa para la diana y el rubber-band.
+    // El snap solo mueve la diana (visual), nunca el mapa — evita bucle de bloqueo.
     DisposableEffect(mapView) {
         val listener = object : org.osmdroid.events.MapListener {
             override fun onScroll(e: org.osmdroid.events.ScrollEvent): Boolean {
@@ -188,16 +199,12 @@ fun ParcelacionScreen(
                 val enTrazo = modo == ModoParcelacion.CORTE ||
                               modo == ModoParcelacion.VIA_LINEA ||
                               modo == ModoParcelacion.SUBDIVISION_LINEA
-                if (enTrazo) {
+                centroDiana = if (enTrazo) {
                     val (sLat, sLon) = snapAPunto(prediosSnapRef.value, gp.latitude, gp.longitude)
-                    // Solo animar si el snap mueve más de 0.5 m (evita loop)
-                    if (distM(gp.latitude, gp.longitude, sLat, sLon) > 0.5) {
-                        mapView.controller.animateTo(GeoPoint(sLat, sLon))
-                        centroDiana = GeoPoint(sLat, sLon)
-                        return false
-                    }
+                    GeoPoint(sLat, sLon)
+                } else {
+                    gp
                 }
-                centroDiana = gp
                 return false
             }
             override fun onZoom(e: org.osmdroid.events.ZoomEvent): Boolean {
@@ -1389,80 +1396,80 @@ private fun dibujarPoligonosContexto(
     mapView.overlays.removeAll { it is ContextoPolygon }
     mapView.overlays.removeAll { it is Marker && (it as Marker).id in setOf(TAG_CONTEXTO_LBL, TAG_REF_POINT) }
     mapView.overlays.removeAll { it is Polyline && (it as Polyline).title == TAG_CONTEXTO }
+    // Z-order: polígonos (base) → líneas → puntos (encima).
+    // add(0,x) inserta en el fondo; la última pasada queda arriba.
     val reader = org.locationtech.jts.io.WKTReader()
+
+    // Pasada 1: Polígonos (capa inferior)
     poligonos.forEach { predio ->
-        val tipo = predio.geometry.geometryType
-        // ── Puntos de referencia ──────────────────────────────────────────────
-        if (tipo == "Point") {
-            runCatching {
-                val c = predio.geometry.coordinates.firstOrNull() ?: return@runCatching
-                Marker(mapView).apply {
-                    id       = TAG_REF_POINT
-                    position = GeoPoint(c.y, c.x)
+        if (predio.geometry.geometryType in listOf("Point", "LineString")) return@forEach
+        runCatching {
+            val wkt      = org.locationtech.jts.io.WKTWriter().write(predio.geometry)
+            val geom     = reader.read(wkt)
+            val coords   = geom.coordinates.map { GeoPoint(it.y, it.x) }
+            val centroid = geom.centroid.coordinate
+            val esSel    = predio.id == predioBaseId
+            ContextoPolygon(mapView).apply {
+                infoWindow               = null
+                points                   = coords
+                outlinePaint.color       = if (esSel) AColor.parseColor("#FF6D00")
+                                          else AColor.argb(200, 255, 109, 0)
+                outlinePaint.strokeWidth = if (esSel) 6f else 3f
+                fillPaint.color          = if (esSel) AColor.argb(60, 255, 109, 0)
+                                          else AColor.argb(30, 255, 109, 0)
+                mapView.overlays.add(0, this)
+            }
+            if (!esSel) {
+                val areaM2 = geom.area * 111_320.0 * (111_320.0 * Math.cos(Math.toRadians(centroid.y)))
+                val areaHa = areaM2 / 10_000.0
+                val textoArea = "%.2f".format(when (areaUnit) {
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaM2
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
+                    com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
+                }) + when (areaUnit) {
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
+                    com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
+                }
+                ParcMinZoomMarker(mapView, 13.0).apply {
+                    id       = TAG_CONTEXTO_LBL
+                    position = GeoPoint(centroid.y, centroid.x)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    icon     = crearPuntoDot(mapView.context, android.graphics.Color.parseColor("#1A1A1A"), 16)
-                    infoWindow = null
-                    mapView.overlays.add(this)
+                    icon     = crearChipArea(mapView.context, textoArea)
+                    mapView.overlays.add(0, this)
                 }
             }
-            return@forEach
         }
-        // ── Líneas de referencia ──────────────────────────────────────────────
-        if (tipo == "LineString") {
-            runCatching {
-                val coords = predio.geometry.coordinates.map { GeoPoint(it.y, it.x) }
-                Polyline(mapView).apply {
-                    title   = TAG_CONTEXTO
-                    setPoints(coords)
-                    outlinePaint.color       = AColor.argb(200, 0, 188, 212)
-                    outlinePaint.strokeWidth = 3f
-                    infoWindow = null
-                    mapView.overlays.add(this)
-                }
+    }
+
+    // Pasada 2: Líneas de referencia (capa intermedia)
+    poligonos.forEach { predio ->
+        if (predio.geometry.geometryType != "LineString") return@forEach
+        runCatching {
+            val coords = predio.geometry.coordinates.map { GeoPoint(it.y, it.x) }
+            Polyline(mapView).apply {
+                title                    = TAG_CONTEXTO
+                setPoints(coords)
+                outlinePaint.color       = AColor.argb(200, 0, 188, 212)
+                outlinePaint.strokeWidth = 3f
+                infoWindow               = null
+                mapView.overlays.add(0, this)
             }
-            return@forEach
         }
-        // ── Polígonos ─────────────────────────────────────────────────────────
-        if (tipo !in listOf("Point", "LineString")) {
-            runCatching {
-                val wkt      = org.locationtech.jts.io.WKTWriter().write(predio.geometry)
-                val geom     = reader.read(wkt)
-                val coords   = geom.coordinates.map { GeoPoint(it.y, it.x) }
-                val centroid = geom.centroid.coordinate
-                val esSel    = predio.id == predioBaseId
+    }
 
-                ContextoPolygon(mapView).apply {
-                    infoWindow               = null
-                    points                   = coords
-                    outlinePaint.color       = if (esSel) AColor.parseColor("#FF6D00")
-                                              else AColor.argb(200, 255, 109, 0)
-                    outlinePaint.strokeWidth = if (esSel) 6f else 3f
-                    fillPaint.color          = if (esSel) AColor.argb(60, 255, 109, 0)
-                                              else AColor.argb(30, 255, 109, 0)
-                    mapView.overlays.add(0, this)  // detrás de todo
-                }
-
-                // Etiqueta de área para polígonos NO seleccionados (el seleccionado ya la tiene en dibujarPoligonoBase)
-                if (!esSel) {
-                    val areaM2 = geom.area * 111_320.0 * (111_320.0 * Math.cos(Math.toRadians(centroid.y)))
-                    val areaHa = areaM2 / 10_000.0
-                    val textoArea = "%.2f".format(when (areaUnit) {
-                        com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaM2
-                        com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
-                        com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
-                    }) + when (areaUnit) {
-                        com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
-                        com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
-                        com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
-                    }
-                    ParcMinZoomMarker(mapView, 13.0).apply {
-                        id       = TAG_CONTEXTO_LBL
-                        position = GeoPoint(centroid.y, centroid.x)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        icon     = crearChipArea(mapView.context, textoArea)
-                        mapView.overlays.add(this)
-                    }
-                }
+    // Pasada 3: Puntos de referencia (capa superior)
+    poligonos.forEach { predio ->
+        if (predio.geometry.geometryType != "Point") return@forEach
+        runCatching {
+            val c = predio.geometry.coordinates.firstOrNull() ?: return@runCatching
+            Marker(mapView).apply {
+                id         = TAG_REF_POINT
+                position   = GeoPoint(c.y, c.x)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                icon       = crearPuntoDot(mapView.context, android.graphics.Color.parseColor("#1A1A1A"), 16)
+                infoWindow = null
+                mapView.overlays.add(0, this)
             }
         }
     }

@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.act.geomapper.data.geopdf.GeoPdfData
+import com.act.geomapper.data.geopdf.GeoPdfImporter
 import com.act.geomapper.data.import.EntidadImportada
 import com.act.geomapper.data.import.ImportService
 import com.act.geomapper.domain.usecase.GuardarPredioUseCase
@@ -27,7 +29,21 @@ class ImportViewModel(
     private val _state = MutableStateFlow(ImportState())
     val state: StateFlow<ImportState> = _state.asStateFlow()
 
+    private val _geoPdfData    = MutableStateFlow<GeoPdfData?>(null)
+    val geoPdfData: StateFlow<GeoPdfData?> = _geoPdfData.asStateFlow()
+
+    private val _geoPdfVisible = MutableStateFlow(true)
+    val geoPdfVisible: StateFlow<Boolean> = _geoPdfVisible.asStateFlow()
+
+    fun toggleGeoPdfVisible() { _geoPdfVisible.value = !_geoPdfVisible.value }
+
     fun parsearArchivo(context: Context, uri: Uri) {
+        val mime   = context.contentResolver.getType(uri) ?: ""
+        val nombre = uri.lastPathSegment?.lowercase() ?: ""
+        if (nombre.endsWith(".pdf") || mime.contains("pdf")) {
+            cargarGeoPdf(context, uri)
+            return
+        }
         _state.update { it.copy(procesando = true, preview = emptyList(), error = null) }
         viewModelScope.launch {
             runCatching {
@@ -39,6 +55,14 @@ class ImportViewModel(
             }
         }
     }
+
+    fun cargarGeoPdf(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            _geoPdfData.value = GeoPdfImporter(context).importar(uri)
+        }
+    }
+
+    fun cerrarGeoPdf() { _geoPdfData.value = null; _geoPdfVisible.value = true }
 
     fun confirmarImportacion(proyectoId: Long) {
         val entidades = _state.value.preview

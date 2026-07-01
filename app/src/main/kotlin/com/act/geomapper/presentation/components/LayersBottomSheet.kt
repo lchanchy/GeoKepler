@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.act.geomapper.data.geopdf.GeoPdfData
 import com.act.geomapper.data.settings.toDisplayArea
 import com.act.geomapper.data.settings.toDisplayDistance
 import com.act.geomapper.domain.models.Predio
@@ -41,6 +42,11 @@ fun LayersBottomSheet(
     onToggleTodosVisibles  : () -> Unit                    = {},
     onEditarAtributos      : (Long, String, String) -> Unit = { _, _, _ -> },
     onNavegar              : (Double, Double) -> Unit       = { _, _ -> },
+    geoPdfData             : GeoPdfData?                    = null,
+    geoPdfVisible          : Boolean                        = true,
+    onToggleGeoPdfVisible  : () -> Unit                    = {},
+    onZoomGeoPdf           : () -> Unit                    = {},
+    onEliminarGeoPdf       : () -> Unit                    = {},
     onDismiss              : () -> Unit
 ) {
     var confirmarEliminarTodos by remember { mutableStateOf(false) }
@@ -111,7 +117,7 @@ fun LayersBottomSheet(
             val poligonos = predios.filter { it.geometry.geometryType !in listOf("Point", "LineString") }
 
             val s = com.act.geomapper.ui.theme.LocalStrings.current
-            if (predios.isEmpty()) {
+            if (predios.isEmpty() && geoPdfData == null) {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(s.sinEntidades, color = Color.White.copy(0.4f), fontSize = 13.sp)
                 }
@@ -121,6 +127,21 @@ fun LayersBottomSheet(
                 var poligonosExpandidos by remember { mutableStateOf(false) }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // ── Sección de capas raster (GeoPDF / TIFF) ──────────────
+                    if (geoPdfData != null) {
+                        item {
+                            SeccionHeader(
+                                icon      = Icons.Default.Map,
+                                titulo    = "Rásteres",
+                                count     = 1,
+                                color     = Color(0xFFCE93D8),
+                                expandido = true,
+                                onToggle  = {}
+                            )
+                        }
+                        item { RasterRow(geoPdfData, geoPdfVisible, onToggleGeoPdfVisible, onZoomGeoPdf, onEliminarGeoPdf) }
+                        item { Spacer(Modifier.height(4.dp)) }
+                    }
                     if (puntos.isNotEmpty()) {
                         item {
                             SeccionHeader(
@@ -343,6 +364,10 @@ private fun EntidadRow(
                         Text(detalle, color = Color.White.copy(0.45f), fontSize = 10.sp)
                     }
 
+                    // 🔍 Zoom a la entidad
+                    IconButton(onClick = { onCentrarEn(wkt) }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.ZoomIn, null, tint = Color(0xFF90CAF9), modifier = Modifier.size(16.dp))
+                    }
                     // 👁 Visibilidad
                     IconButton(onClick = { onToggleVisibilidad(predio.id) }, modifier = Modifier.size(32.dp)) {
                         Icon(
@@ -392,6 +417,79 @@ private fun EntidadRow(
                     TextButton(onClick = { confirmarBorrar = false }) { Text("Cancelar", fontSize = 11.sp) }
                     Button(
                         onClick = { onEliminar(predio.id); confirmarBorrar = false },
+                        colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) { Text("Eliminar", fontSize = 11.sp) }
+                }
+            }
+        }
+    }
+}
+
+// ── Fila de capa raster (GeoPDF / TIFF) ──────────────────────────────────────
+
+@Composable
+private fun RasterRow(
+    data           : GeoPdfData,
+    visible        : Boolean,
+    onToggleVisible: () -> Unit,
+    onZoom         : () -> Unit,
+    onEliminar     : () -> Unit
+) {
+    var confirmarBorrar by remember { mutableStateOf(false) }
+
+    GlassBox(shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Map,
+                    null,
+                    tint     = if (visible) Color(0xFFCE93D8) else Color(0xFFCE93D8).copy(0.35f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        data.nombre,
+                        color      = if (visible) Color.White else Color.White.copy(0.35f),
+                        fontSize   = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines   = 1
+                    )
+                    val bbox = "N%.5f S%.5f E%.5f O%.5f".format(
+                        data.norte, data.sur, data.este, data.oeste
+                    )
+                    Text(bbox, color = Color.White.copy(0.4f), fontSize = 10.sp, maxLines = 1)
+                }
+                // 🔍 Zoom al extent
+                IconButton(onClick = { onZoom() }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.ZoomIn, null, tint = Color(0xFF90CAF9), modifier = Modifier.size(16.dp))
+                }
+                // 👁 Visibilidad
+                IconButton(onClick = onToggleVisible, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        null,
+                        tint     = if (visible) Color(0xFF81C784) else Color.White.copy(0.3f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                // 🗑 Eliminar
+                IconButton(onClick = { confirmarBorrar = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, null, tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
+                }
+            }
+
+            AnimatedVisibility(confirmarBorrar) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                ) {
+                    TextButton(onClick = { confirmarBorrar = false }) {
+                        Text("Cancelar", fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = { onEliminar(); confirmarBorrar = false },
                         colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) { Text("Eliminar", fontSize = 11.sp) }

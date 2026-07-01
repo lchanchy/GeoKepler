@@ -48,7 +48,9 @@ import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import org.locationtech.jts.io.WKTReader
 import com.act.geomapper.data.settings.CoordFormat
 import com.act.geomapper.data.settings.formatCoord
+import com.act.geomapper.data.geopdf.GeoPdfData
 import com.act.geomapper.presentation.overlay.DirectionOverlay
+import com.act.geomapper.presentation.overlay.GeoPdfOverlay
 import com.act.geomapper.presentation.overlay.VertexEditOverlay
 import com.act.geomapper.presentation.overlay.crearPuntoDot
 import com.act.geomapper.ui.theme.rememberWindowInfo
@@ -62,6 +64,8 @@ fun MapScreen(
     predios         : List<com.act.geomapper.domain.models.Predio> = emptyList(),
     ocultos         : Set<Long>                   = emptySet(),
     redrawVersion   : Int                         = 0,
+    geoPdfData      : GeoPdfData?                 = null,
+    geoPdfVisible   : Boolean                     = true,
     onGuardarEdicion: (Long, org.locationtech.jts.geom.Geometry) -> Unit = { _, _ -> },
     modifier        : Modifier                    = Modifier
 ) {
@@ -114,6 +118,12 @@ fun MapScreen(
 
     LaunchedEffect(basemapActual) {
         mapView.setTileSource(basemapActual.toTileSource())
+        mapView.invalidate()
+    }
+
+    LaunchedEffect(geoPdfData, geoPdfVisible) {
+        mapView.overlays.removeAll { it is GeoPdfOverlay }
+        if (geoPdfData != null && geoPdfVisible) mapView.overlays.add(0, GeoPdfOverlay(geoPdfData))
         mapView.invalidate()
     }
 
@@ -497,92 +507,100 @@ private fun dibujarEntidadesGuardadas(
         }
     }
 
+    // Z-order: polígonos (base) → líneas → puntos (encima).
+    // add(0,x) inserta en el fondo; la última pasada queda arriba.
     val reader = WKTReader()
+
+    // Pasada 1: Polígonos (capa inferior)
     entidades.forEach { (predio, wkt) ->
         runCatching {
             val geom = reader.read(wkt)
-            when (geom.geometryType) {
-                "Point" -> {
-                    Marker(mapView).apply {
-                        id         = TAG_GUARDADA
-                        position   = GeoPoint(geom.coordinate.y, geom.coordinate.x)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        icon       = crearPuntoDot(mapView.context, AColor.parseColor("#1A1A1A"), 16)
-                        infoWindow = null
-                        mapView.overlays.add(0, this)  // detrás del overlay de captura
+            if (geom.geometryType == "Point" || geom.geometryType == "LineString") return@runCatching
+            val coords   = geom.coordinates.map { GeoPoint(it.y, it.x) }
+            val centroid = geom.centroid.coordinate
+            Polygon(mapView).apply {
+                title                    = TAG_GUARDADA
+                infoWindow               = null
+                points                   = coords
+                fillPaint.color          = if (conRelleno) AColor.argb(70, 255, 193, 7) else AColor.TRANSPARENT
+                outlinePaint.color       = AColor.parseColor("#E65100")
+                outlinePaint.strokeWidth = 3f
+                mapView.overlays.add(0, this)
+            }
+            val areaHa = predio?.area ?: 0.0
+            if (areaHa > 0) {
+                val textoArea = "%.2f".format(
+                    when (areaUnit) {
+                        com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaHa * 10_000
+                        com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
+                        com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
                     }
+                ) + when (areaUnit) {
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
+                    com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
+                    com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
                 }
-                "LineString" -> {
-                    Polyline(mapView).apply {
-                        title            = TAG_GUARDADA
-                        infoWindow       = null
-                        setPoints(geom.coordinates.map { GeoPoint(it.y, it.x) })
-                        outlinePaint.color       = AColor.parseColor("#1565C0")
-                        outlinePaint.strokeWidth = 3f
-                        mapView.overlays.add(0, this)
-                    }
-                    // Etiqueta de longitud en el punto medio de la línea
-                    val longM = predio?.perimetro ?: 0.0
-                    if (longM > 0) {
-                        val textoLong = "%.2f".format(
-                            when (distanceUnit) {
-                                com.act.geomapper.data.settings.DistanceUnit.KILOMETERS -> longM / 1000.0
-                                else -> longM
-                            }
-                        ) + when (distanceUnit) {
-                            com.act.geomapper.data.settings.DistanceUnit.KILOMETERS -> " km"
-                            else -> " m"
-                        }
-                        val coords = geom.coordinates
-                        val mid    = coords[coords.size / 2]
-                        Marker(mapView).apply {
-                            id         = TAG_GUARDADA
-                            position   = GeoPoint(mid.y, mid.x)
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            icon       = crearEtiquetaTexto(mapView.context, textoLong)
-                            infoWindow = null
-                            mapView.overlays.add(0, this)
-                        }
-                    }
+                MinZoomMarker(mapView, 13.0).apply {
+                    id       = TAG_AREA_LBL
+                    position = GeoPoint(centroid.y, centroid.x)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    icon     = crearEtiquetaTexto(mapView.context, textoArea)
+                    mapView.overlays.add(0, this)
                 }
-                else -> {
-                    val coords   = geom.coordinates.map { GeoPoint(it.y, it.x) }
-                    val centroid = geom.centroid.coordinate
+            }
+        }
+    }
 
-                    Polygon(mapView).apply {
-                        title                    = TAG_GUARDADA
-                        infoWindow               = null
-                        points                   = coords
-                        fillPaint.color          = if (conRelleno) AColor.argb(70, 255, 193, 7) else AColor.TRANSPARENT
-                        outlinePaint.color       = AColor.parseColor("#E65100")
-                        outlinePaint.strokeWidth = 3f
-                        mapView.overlays.add(0, this)
+    // Pasada 2: Líneas (capa intermedia)
+    entidades.forEach { (predio, wkt) ->
+        runCatching {
+            val geom = reader.read(wkt)
+            if (geom.geometryType != "LineString") return@runCatching
+            Polyline(mapView).apply {
+                title                    = TAG_GUARDADA
+                infoWindow               = null
+                setPoints(geom.coordinates.map { GeoPoint(it.y, it.x) })
+                outlinePaint.color       = AColor.parseColor("#1565C0")
+                outlinePaint.strokeWidth = 3f
+                mapView.overlays.add(0, this)
+            }
+            val longM = predio?.perimetro ?: 0.0
+            if (longM > 0) {
+                val textoLong = "%.2f".format(
+                    when (distanceUnit) {
+                        com.act.geomapper.data.settings.DistanceUnit.KILOMETERS -> longM / 1000.0
+                        else -> longM
                     }
-
-                    // ── Etiqueta de área (zoom ≥ 13) ─────────────────────────
-                    val areaHa = predio?.area ?: 0.0
-                    if (areaHa > 0) {
-                        val textoArea = "%.2f".format(
-                            when (areaUnit) {
-                                com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaHa * 10_000
-                                com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
-                                com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
-                            }
-                        ) + when (areaUnit) {
-                            com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
-                            com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
-                            com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
-                        }
-                        MinZoomMarker(mapView, 13.0).apply {
-                            id       = TAG_AREA_LBL
-                            position = GeoPoint(centroid.y, centroid.x)
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            icon     = crearEtiquetaTexto(mapView.context, textoArea)
-                            mapView.overlays.add(0, this)
-                        }
-                    }
-
+                ) + when (distanceUnit) {
+                    com.act.geomapper.data.settings.DistanceUnit.KILOMETERS -> " km"
+                    else -> " m"
                 }
+                val coords = geom.coordinates
+                val mid    = coords[coords.size / 2]
+                Marker(mapView).apply {
+                    id         = TAG_GUARDADA
+                    position   = GeoPoint(mid.y, mid.x)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    icon       = crearEtiquetaTexto(mapView.context, textoLong)
+                    infoWindow = null
+                    mapView.overlays.add(0, this)
+                }
+            }
+        }
+    }
+
+    // Pasada 3: Puntos (capa superior)
+    entidades.forEach { (_, wkt) ->
+        runCatching {
+            val geom = reader.read(wkt)
+            if (geom.geometryType != "Point") return@runCatching
+            Marker(mapView).apply {
+                id         = TAG_GUARDADA
+                position   = GeoPoint(geom.coordinate.y, geom.coordinate.x)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                icon       = crearPuntoDot(mapView.context, AColor.parseColor("#1A1A1A"), 16)
+                infoWindow = null
+                mapView.overlays.add(0, this)
             }
         }
     }
