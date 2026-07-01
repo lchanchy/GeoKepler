@@ -330,29 +330,6 @@ fun ParcelacionScreen(
                         modifier = Modifier.size(20.dp))
                 }
 
-                // Botón GPS — añade la posición actual del dispositivo
-                val gpsActivo = estadoGps.puntoActual != null
-                FloatingActionButton(
-                    onClick = {
-                        estadoGps.puntoActual?.let { p ->
-                            val (sLat, sLon) = snapAPunto(poligonos, p.latitud, p.longitud)
-                            vm.agregarPuntoLinea(sLat, sLon)
-                            mapView.controller.animateTo(GeoPoint(sLat, sLon))
-                        }
-                    },
-                    containerColor = if (gpsActivo) Color(0xFF00897B) else Color(0xFF546E7A),
-                    shape          = CircleShape,
-                    modifier       = Modifier.size(52.dp),
-                    elevation      = FloatingActionButtonDefaults.elevation(4.dp)
-                ) {
-                    Icon(
-                        if (gpsActivo) Icons.Default.AddLocation else Icons.Default.GpsOff,
-                        null,
-                        tint     = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
                 // Botón diana — añade el centro del mapa (con snap a punto cercano)
                 FloatingActionButton(
                     onClick = {
