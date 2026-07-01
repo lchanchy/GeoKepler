@@ -175,11 +175,30 @@ fun ParcelacionScreen(
         }
     }
 
-    // Rastrear el centro del mapa para la diana y el rubber-band
+    // Refs actualizadas en tiempo real, leíbles desde el listener sin reiniciarlo
+    val prediosSnapRef = androidx.compose.runtime.rememberUpdatedState(poligonos)
+    val modoSnapRef    = androidx.compose.runtime.rememberUpdatedState(state.modo)
+
+    // Rastrear el centro del mapa para la diana y el rubber-band; snap automático a puntos
     DisposableEffect(mapView) {
         val listener = object : org.osmdroid.events.MapListener {
             override fun onScroll(e: org.osmdroid.events.ScrollEvent): Boolean {
-                centroDiana = mapView.mapCenter as GeoPoint; return false
+                val gp = mapView.mapCenter as GeoPoint
+                val modo = modoSnapRef.value
+                val enTrazo = modo == ModoParcelacion.CORTE ||
+                              modo == ModoParcelacion.VIA_LINEA ||
+                              modo == ModoParcelacion.SUBDIVISION_LINEA
+                if (enTrazo) {
+                    val (sLat, sLon) = snapAPunto(prediosSnapRef.value, gp.latitude, gp.longitude)
+                    // Solo animar si el snap mueve más de 0.5 m (evita loop)
+                    if (distM(gp.latitude, gp.longitude, sLat, sLon) > 0.5) {
+                        mapView.controller.animateTo(GeoPoint(sLat, sLon))
+                        centroDiana = GeoPoint(sLat, sLon)
+                        return false
+                    }
+                }
+                centroDiana = gp
+                return false
             }
             override fun onZoom(e: org.osmdroid.events.ZoomEvent): Boolean {
                 centroDiana = mapView.mapCenter as GeoPoint; return false
