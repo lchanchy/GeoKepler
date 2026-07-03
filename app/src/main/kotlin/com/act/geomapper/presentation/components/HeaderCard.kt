@@ -177,7 +177,9 @@ fun HeaderCard(
                         color         = contentColor,
                         fontWeight    = FontWeight.ExtraBold,
                         fontSize      = 18.sp,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        maxLines      = 1,
+                        overflow      = TextOverflow.Ellipsis
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Surface(shape = CircleShape, color = colorGps.copy(alpha = dotAlpha), modifier = Modifier.size(7.dp)) {}
@@ -187,11 +189,11 @@ fun HeaderCard(
                 }
 
                 // Chip GPS interno
-                // Chip GPS — altura fija para que ambos chips sean gemelos
+                // Chip GPS — tamaño fijo para evitar reflejo al cambiar precisión
                 Surface(
                     shape    = RoundedCornerShape(8.dp),
                     color    = AzulChip,
-                    modifier = Modifier.height(34.dp)
+                    modifier = Modifier.height(34.dp).widthIn(min = 76.dp)
                 ) {
                     Row(
                         modifier              = Modifier
@@ -208,12 +210,13 @@ fun HeaderCard(
                     }
                 }
 
-                // Chip GNSS externo — misma altura fija, dos líneas: BT + NTRIP
+                // Chip GNSS externo — tamaño fijo para evitar reflejo al conectar
                 Surface(
                     shape    = RoundedCornerShape(8.dp),
                     color    = colorGnss,
                     modifier = Modifier
                         .height(34.dp)
+                        .widthIn(min = 82.dp)
                         .clickable {
                             onBuscarDispositivos()
                             mostrarDialogGnss = true
@@ -654,12 +657,14 @@ private fun NtripTab(
     onDesconectar    : () -> Unit,
     onDismiss        : () -> Unit
 ) {
-    val carpeta = LocalContext.current.getExternalFilesDir(null)?.absolutePath ?: ""
-    var host       by remember { mutableStateOf("") }
-    var puerto     by remember { mutableStateOf("2101") }
-    var mount      by remember { mutableStateOf("") }
-    var user       by remember { mutableStateOf("") }
-    var pass       by remember { mutableStateOf("") }
+    val ctx     = LocalContext.current
+    val carpeta = ctx.getExternalFilesDir(null)?.absolutePath ?: ""
+    val prefs   = remember { ctx.getSharedPreferences("ntrip_config", android.content.Context.MODE_PRIVATE) }
+    var host       by remember { mutableStateOf(prefs.getString("host",   "") ?: "") }
+    var puerto     by remember { mutableStateOf(prefs.getString("puerto", "2101") ?: "2101") }
+    var mount      by remember { mutableStateOf(prefs.getString("mount",  "") ?: "") }
+    var user       by remember { mutableStateOf(prefs.getString("user",   "") ?: "") }
+    var pass       by remember { mutableStateOf(prefs.getString("pass",   "") ?: "") }
     var mostrarPass by remember { mutableStateOf(false) }
 
     val (colorChip, textoChip, subtextoHost) = when (estado) {
@@ -763,7 +768,16 @@ private fun NtripTab(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick  = {
-                    onConectar(NtripConfig(host, puerto.toIntOrNull() ?: 2101, mount, user, pass))
+                    val h = host.trim(); val m = mount.trim()
+                    val u = user.trim(); val p = pass.trim()
+                    prefs.edit()
+                        .putString("host",   h)
+                        .putString("puerto", puerto.trim())
+                        .putString("mount",  m)
+                        .putString("user",   u)
+                        .putString("pass",   p)
+                        .apply()
+                    onConectar(NtripConfig(h, puerto.trim().toIntOrNull() ?: 2101, m, u, p))
                     onDismiss()
                 },
                 enabled  = estado !is NtripEstado.Conectado && host.isNotBlank() && mount.isNotBlank(),

@@ -51,10 +51,12 @@ class NtripClient(private val gnssDevice: IGnssDevice) {
                     socket = Socket(config.host, config.puerto)
                     socket.soTimeout = 15_000
 
-                    // Request NTRIP v1
-                    val credencial = if (config.usuario.isNotBlank()) {
+                    // Request NTRIP v1 — Ntrip-Version evita interceptación por proxies HTTP
+                    val usuario = config.usuario.trim()
+                    val contrasena = config.contrasena.trim()
+                    val credencial = if (usuario.isNotBlank()) {
                         Base64.encodeToString(
-                            "${config.usuario}:${config.contrasena}".toByteArray(Charsets.UTF_8),
+                            "$usuario:$contrasena".toByteArray(Charsets.UTF_8),
                             Base64.NO_WRAP
                         )
                     } else null
@@ -62,6 +64,7 @@ class NtripClient(private val gnssDevice: IGnssDevice) {
                     val request = buildString {
                         append("GET /${config.mountpoint} HTTP/1.0\r\n")
                         append("Host: ${config.host}:${config.puerto}\r\n")
+                        append("Ntrip-Version: Ntrip/1.0\r\n")
                         append("User-Agent: $USER_AGENT\r\n")
                         credencial?.let { append("Authorization: Basic $it\r\n") }
                         append("Connection: close\r\n")
@@ -85,8 +88,15 @@ class NtripClient(private val gnssDevice: IGnssDevice) {
                         }
                     }
                     val respuesta = header.toString()
-                    if (!respuesta.contains("200") && !respuesta.startsWith("ICY")) {
-                        throw IOException("NTRIP error: ${respuesta.lines().firstOrNull()?.take(80)}")
+                    val primeraLinea = respuesta.lines().firstOrNull() ?: ""
+                    when {
+                        respuesta.contains("200") || respuesta.startsWith("ICY") -> { /* OK */ }
+                        primeraLinea.contains("401") ->
+                            throw IOException("Credenciales incorrectas (401 Unauthorized). Verifique usuario y contraseña.")
+                        primeraLinea.contains("404") ->
+                            throw IOException("Mountpoint no encontrado (404). Verifique el nombre del mountpoint.")
+                        else ->
+                            throw IOException("NTRIP error: ${primeraLinea.take(80)}")
                     }
 
                     // Enviar GGA al caster si hay fix disponible (necesario para VRS)
