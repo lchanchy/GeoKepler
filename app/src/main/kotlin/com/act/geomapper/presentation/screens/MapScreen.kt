@@ -353,13 +353,16 @@ fun MapScreen(
                 distMetros == null  -> "—"
                 else                -> distMetros.toDouble().toDisplayDistance(settings.distanceUnit)
             }
+            // Sube sobre la barra de captura cuando está activa, si no queda sobre coords
+            val chipBot = if (uiState.modoCaptura != ModoCaptura.NINGUNO)
+                win.captureBarBot + 60.dp else win.coordBarBot + 40.dp
             NavegacionChip(
                 distancia = distanciaTexto,
                 onDetener = viewModel::detenerNavegacion,
                 modifier  = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = win.coordBarBot + 48.dp)
+                    .padding(bottom = chipBot)
             )
         }
 
