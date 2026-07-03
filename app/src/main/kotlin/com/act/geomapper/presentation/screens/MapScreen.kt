@@ -57,12 +57,6 @@ import com.act.geomapper.presentation.overlay.crearPuntoDot
 import com.act.geomapper.ui.theme.rememberWindowInfo
 import android.media.AudioManager
 import android.media.ToneGenerator
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.navigationBarsPadding
 
 @Composable
@@ -353,34 +347,7 @@ fun MapScreen(
                 sonoAntes = llegada
             }
 
-            // Ángulo flecha = rumbo al objetivo − azimut brújula del dispositivo
-            val anguloFlecha = ((rumboPunto - uiState.azimut + 360f) % 360f)
-            val anguloAnimado by animateFloatAsState(anguloFlecha, tween(200), label = "nav")
-
-            // Brújula flotante encima del chip
-            Box(
-                modifier         = Modifier
-                    .align(Alignment.BottomStart)
-                    .navigationBarsPadding()
-                    .padding(start = 22.dp, bottom = win.fabBottomPad + 118.dp)
-                    .size(48.dp)
-                    .background(
-                        if (llegada) Color(0xFF00C853).copy(0.9f) else Color(0xCC1A2A3A),
-                        CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (llegada) {
-                    Icon(Icons.Default.CheckCircle, null,
-                        tint = Color.White, modifier = Modifier.size(28.dp))
-                } else {
-                    Icon(Icons.Default.Navigation, null,
-                        tint = if (posLat != null) Color(0xFF42A5F5) else Color.White.copy(0.3f),
-                        modifier = Modifier.size(28.dp).rotate(anguloAnimado))
-                }
-            }
-
-            // Chip de distancia
+            // Chip de distancia — centrado sobre la barra de coordenadas, sin solapar captura
             val distanciaTexto = when {
                 llegada             -> "¡Llegó!"
                 distMetros == null  -> "—"
@@ -390,52 +357,10 @@ fun MapScreen(
                 distancia = distanciaTexto,
                 onDetener = viewModel::detenerNavegacion,
                 modifier  = Modifier
-                    .align(Alignment.BottomStart)
+                    .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(start = 16.dp, bottom = win.fabBottomPad + 64.dp)
+                    .padding(bottom = win.coordBarBot + 48.dp)
             )
-
-            // Chips de selección de puntos (solo en modo replanteo)
-            if (uiState.replanteoDestinos.isNotEmpty()) {
-                Row(
-                    modifier          = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(bottom = win.fabBottomPad + 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = viewModel::replanteoAnterior) {
-                        Icon(Icons.Default.ChevronLeft, null, tint = Color.White.copy(0.8f))
-                    }
-                    Row(
-                        modifier              = Modifier
-                            .weight(1f, fill = false)
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        uiState.replanteoDestinos.forEachIndexed { i, (nombre, _) ->
-                            FilterChip(
-                                selected = i == uiState.replanteoIndice,
-                                onClick  = { viewModel.replanteoSeleccionar(i) },
-                                label    = {
-                                    Text(nombre, maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                        fontSize = 11.sp)
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF1565C0),
-                                    selectedLabelColor     = Color.White,
-                                    containerColor         = Color(0xCC1A1A1A),
-                                    labelColor             = Color.White.copy(0.7f)
-                                )
-                            )
-                        }
-                    }
-                    IconButton(onClick = viewModel::replanteoSiguiente) {
-                        Icon(Icons.Default.ChevronRight, null, tint = Color.White.copy(0.8f))
-                    }
-                }
-            }
         }
 
         // ── Chip de área resultado ────────────────────────────────────────

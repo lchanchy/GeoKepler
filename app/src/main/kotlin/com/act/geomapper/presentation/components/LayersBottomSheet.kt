@@ -42,7 +42,6 @@ fun LayersBottomSheet(
     onToggleTodosVisibles  : () -> Unit                    = {},
     onEditarAtributos      : (Long, String, String) -> Unit = { _, _, _ -> },
     onNavegar              : (Double, Double) -> Unit       = { _, _ -> },
-    onReplantear           : () -> Unit                     = {},
     geoPdfData             : GeoPdfData?                    = null,
     geoPdfVisible          : Boolean                        = true,
     onToggleGeoPdfVisible  : () -> Unit                    = {},
@@ -155,18 +154,6 @@ fun LayersBottomSheet(
                                         expandido  = puntosExpandidos,
                                         onToggle   = { puntosExpandidos = !puntosExpandidos }
                                     )
-                                }
-                                TextButton(
-                                    onClick = { onReplantear(); onDismiss() },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.MyLocation, null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint     = Color(0xFF42A5F5)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("Replantear", color = Color(0xFF42A5F5), fontSize = 12.sp)
                                 }
                             }
                         }

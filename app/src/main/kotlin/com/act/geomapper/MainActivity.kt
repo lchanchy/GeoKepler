@@ -587,7 +587,18 @@ private fun MapaApp(
             areaUnit            = settings.areaUnit,
             distanceUnit        = settings.distanceUnit,
             onToggleVisibilidad = predioVM::toggleVisibilidad,
-            onEliminar          = predioVM::eliminar,
+            onEliminar          = { id ->
+                // Si el punto eliminado es el destino de navegación, limpiar flecha
+                val destino = mapState.navegacionDestino
+                val predio  = predioState.predios.firstOrNull { it.id == id }
+                if (destino != null && predio?.geometry?.geometryType == "Point") {
+                    val lat = predio.geometry.coordinate.y
+                    val lon = predio.geometry.coordinate.x
+                    if (Math.abs(lat - destino.latitud) < 1e-6 && Math.abs(lon - destino.longitud) < 1e-6)
+                        mapVM.detenerNavegacion()
+                }
+                predioVM.eliminar(id)
+            },
             onRenombrar         = predioVM::renombrar,
             onCentrarEn         = { wkt ->
                 runCatching {
@@ -624,10 +635,6 @@ private fun MapaApp(
                 mostrarCapas = false
             },
             onEliminarGeoPdf      = { importVM.cerrarGeoPdf() },
-            onReplantear          = {
-                mapVM.iniciarReplanteo(predioState.predios)
-                mostrarCapas = false
-            },
             onDismiss             = { mostrarCapas = false }
         )
     }
