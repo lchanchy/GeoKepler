@@ -138,6 +138,7 @@ class MainActivity : ComponentActivity() {
             add(Manifest.permission.ACCESS_COARSE_LOCATION)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 add(Manifest.permission.BLUETOOTH_CONNECT)
+                add(Manifest.permission.BLUETOOTH_SCAN)
             }
         }
         permisosLauncher.launch(permisos.toTypedArray())
@@ -195,17 +196,18 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 AppRoot(
-                    proyectoVM      = proyectoViewModel,
-                    mapVM           = mapViewModel,
-                    settingsVM      = settingsViewModel,
-                    predioVM        = predioViewModel,
-                    parcelacionVM   = parcelacionViewModel,
-                    importVM        = importViewModel,
-                    gnssService     = gnssBluetoothService,
-                    gnssWifiService = gnssWifiService,
-                    ntrip           = ntripClient,
-                    logger          = gnssLoggerService,
-                    onAbrirPicker   = {
+                    proyectoVM       = proyectoViewModel,
+                    mapVM            = mapViewModel,
+                    settingsVM       = settingsViewModel,
+                    predioVM         = predioViewModel,
+                    parcelacionVM    = parcelacionViewModel,
+                    importVM         = importViewModel,
+                    gnssService      = gnssBluetoothService,
+                    gnssWifiService  = gnssWifiService,
+                    gnssFixMerged    = _gnssFixMerged.asStateFlow(),
+                    ntrip            = ntripClient,
+                    logger           = gnssLoggerService,
+                    onAbrirPicker    = {
                         safLauncher.launch(arrayOf(
                             "application/json", "*/*",
                             "application/vnd.google-earth.kml+xml",
@@ -281,6 +283,7 @@ private fun AppRoot(
     importVM        : ImportViewModel,
     gnssService     : com.act.geomapper.data.gnss.GnssBluetoothService,
     gnssWifiService : com.act.geomapper.data.gnss.GnssWifiService,
+    gnssFixMerged   : kotlinx.coroutines.flow.StateFlow<com.act.geomapper.data.gnss.GnssFix?>,
     ntrip           : NtripClient,
     logger          : GnssLoggerService,
     onAbrirPicker   : () -> Unit
@@ -322,6 +325,7 @@ private fun AppRoot(
                 proyectoVM, mapVM, settingsVM, predioVM, importVM, onAbrirPicker,
                 gnssService     = gnssService,
                 gnssWifiService = gnssWifiService,
+                gnssFixMerged   = gnssFixMerged,
                 ntrip           = ntrip,
                 logger          = logger,
                 basemapActual   = basemapActual,
@@ -343,6 +347,7 @@ private fun MapaApp(
     onAbrirPicker   : () -> Unit,
     gnssService     : com.act.geomapper.data.gnss.GnssBluetoothService,
     gnssWifiService : com.act.geomapper.data.gnss.GnssWifiService,
+    gnssFixMerged   : kotlinx.coroutines.flow.StateFlow<com.act.geomapper.data.gnss.GnssFix?>,
     ntrip           : NtripClient,
     logger          : GnssLoggerService,
     basemapActual   : com.act.geomapper.presentation.components.Basemap,
@@ -359,6 +364,7 @@ private fun MapaApp(
     val estadoBt          by gnssService.estado.collectAsStateWithLifecycle()
     val dispositivosBt    by gnssService.dispositivosEmparejados.collectAsStateWithLifecycle()
     val estadoWifiGnss    by gnssWifiService.estado.collectAsStateWithLifecycle()
+    val gnssFixActual: com.act.geomapper.data.gnss.GnssFix? by gnssFixMerged.collectAsStateWithLifecycle()
     val estadoNtrip       by ntrip.estado.collectAsStateWithLifecycle()
     val bytesNtrip        by ntrip.bytesRecibidos.collectAsStateWithLifecycle()
     val velocidadNtrip    by ntrip.velocidadKbs.collectAsStateWithLifecycle()
@@ -443,6 +449,9 @@ private fun MapaApp(
             redrawVersion    = mapRedrawVersion,
             geoPdfData       = geoPdfData,
             geoPdfVisible    = geoPdfVisible,
+            gnssFixMerged    = gnssFixActual,
+            btConectado      = estadoBt is com.act.geomapper.data.gnss.BtGnssEstado.Conectado,
+            wifiConectado    = estadoWifiGnss is com.act.geomapper.data.gnss.WifiGnssEstado.Conectado,
             onGuardarEdicion = { id, geom -> predioVM.actualizarGeometria(id, geom) },
             modifier         = Modifier.fillMaxSize()
         )
@@ -615,6 +624,10 @@ private fun MapaApp(
                 mostrarCapas = false
             },
             onEliminarGeoPdf      = { importVM.cerrarGeoPdf() },
+            onReplantear          = {
+                mapVM.iniciarReplanteo(predioState.predios)
+                mostrarCapas = false
+            },
             onDismiss             = { mostrarCapas = false }
         )
     }

@@ -49,11 +49,20 @@ import org.locationtech.jts.io.WKTReader
 import com.act.geomapper.data.settings.CoordFormat
 import com.act.geomapper.data.settings.formatCoord
 import com.act.geomapper.data.geopdf.GeoPdfData
+import com.act.geomapper.data.gnss.GnssFix
 import com.act.geomapper.presentation.overlay.DirectionOverlay
 import com.act.geomapper.presentation.overlay.GeoPdfOverlay
 import com.act.geomapper.presentation.overlay.VertexEditOverlay
 import com.act.geomapper.presentation.overlay.crearPuntoDot
 import com.act.geomapper.ui.theme.rememberWindowInfo
+import android.media.AudioManager
+import android.media.ToneGenerator
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.navigationBarsPadding
 
 @Composable
@@ -66,6 +75,9 @@ fun MapScreen(
     redrawVersion   : Int                         = 0,
     geoPdfData      : GeoPdfData?                 = null,
     geoPdfVisible   : Boolean                     = true,
+    gnssFixMerged   : GnssFix?                    = null,
+    btConectado     : Boolean                     = false,
+    wifiConectado   : Boolean                     = false,
     onGuardarEdicion: (Long, org.locationtech.jts.geom.Geometry) -> Unit = { _, _ -> },
     modifier        : Modifier                    = Modifier
 ) {
@@ -308,18 +320,72 @@ fun MapScreen(
             }
         }
 
-        // ── Chip de navegación: distancia en tiempo real al punto destino ────
+        // ── Navegación / Replanteo ────────────────────────────────────────────
         uiState.navegacionDestino?.let { destino ->
-            val origen = uiState.estadoGps.puntoActual
-            val distanciaTexto = if (origen != null) {
-                val result = FloatArray(1)
-                android.location.Location.distanceBetween(
-                    origen.latitud, origen.longitud,
-                    destino.latitud, destino.longitud,
-                    result
-                )
-                result[0].toDouble().toDisplayDistance(settings.distanceUnit)
-            } else "—"
+
+            // Posición activa: GNSS externo si conectado, si no GPS interno
+            val externalOk = (btConectado || wifiConectado) && gnssFixMerged != null
+            val posLat = if (externalOk) gnssFixMerged!!.latitud  else uiState.estadoGps.puntoActual?.latitud
+            val posLon = if (externalOk) gnssFixMerged!!.longitud else uiState.estadoGps.puntoActual?.longitud
+
+            // Distancia y rumbo al destino
+            val navResult = if (posLat != null && posLon != null) {
+                FloatArray(2).also { r ->
+                    android.location.Location.distanceBetween(posLat, posLon, destino.latitud, destino.longitud, r)
+                }
+            } else null
+            val distMetros  = navResult?.get(0)
+            val rumboPunto  = navResult?.get(1) ?: 0f
+
+            // Umbral de llegada: 3 cm con GNSS externo RTK, 3 m con GPS interno
+            val umbral  = if (externalOk) 0.03f else 3.0f
+            val llegada = distMetros != null && distMetros < umbral
+
+            // Sonido — una sola vez por transición false→true
+            var sonoAntes by remember { mutableStateOf(false) }
+            LaunchedEffect(llegada) {
+                if (llegada && !sonoAntes) {
+                    runCatching {
+                        ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+                            .startTone(ToneGenerator.TONE_PROP_BEEP, 800)
+                    }
+                }
+                sonoAntes = llegada
+            }
+
+            // Ángulo flecha = rumbo al objetivo − azimut brújula del dispositivo
+            val anguloFlecha = ((rumboPunto - uiState.azimut + 360f) % 360f)
+            val anguloAnimado by animateFloatAsState(anguloFlecha, tween(200), label = "nav")
+
+            // Brújula flotante encima del chip
+            Box(
+                modifier         = Modifier
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 22.dp, bottom = win.fabBottomPad + 118.dp)
+                    .size(48.dp)
+                    .background(
+                        if (llegada) Color(0xFF00C853).copy(0.9f) else Color(0xCC1A2A3A),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (llegada) {
+                    Icon(Icons.Default.CheckCircle, null,
+                        tint = Color.White, modifier = Modifier.size(28.dp))
+                } else {
+                    Icon(Icons.Default.Navigation, null,
+                        tint = if (posLat != null) Color(0xFF42A5F5) else Color.White.copy(0.3f),
+                        modifier = Modifier.size(28.dp).rotate(anguloAnimado))
+                }
+            }
+
+            // Chip de distancia
+            val distanciaTexto = when {
+                llegada             -> "¡Llegó!"
+                distMetros == null  -> "—"
+                else                -> distMetros.toDouble().toDisplayDistance(settings.distanceUnit)
+            }
             NavegacionChip(
                 distancia = distanciaTexto,
                 onDetener = viewModel::detenerNavegacion,
@@ -328,6 +394,48 @@ fun MapScreen(
                     .navigationBarsPadding()
                     .padding(start = 16.dp, bottom = win.fabBottomPad + 64.dp)
             )
+
+            // Chips de selección de puntos (solo en modo replanteo)
+            if (uiState.replanteoDestinos.isNotEmpty()) {
+                Row(
+                    modifier          = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = win.fabBottomPad + 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = viewModel::replanteoAnterior) {
+                        Icon(Icons.Default.ChevronLeft, null, tint = Color.White.copy(0.8f))
+                    }
+                    Row(
+                        modifier              = Modifier
+                            .weight(1f, fill = false)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        uiState.replanteoDestinos.forEachIndexed { i, (nombre, _) ->
+                            FilterChip(
+                                selected = i == uiState.replanteoIndice,
+                                onClick  = { viewModel.replanteoSeleccionar(i) },
+                                label    = {
+                                    Text(nombre, maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        fontSize = 11.sp)
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF1565C0),
+                                    selectedLabelColor     = Color.White,
+                                    containerColor         = Color(0xCC1A1A1A),
+                                    labelColor             = Color.White.copy(0.7f)
+                                )
+                            )
+                        }
+                    }
+                    IconButton(onClick = viewModel::replanteoSiguiente) {
+                        Icon(Icons.Default.ChevronRight, null, tint = Color.White.copy(0.8f))
+                    }
+                }
+            }
         }
 
         // ── Chip de área resultado ────────────────────────────────────────

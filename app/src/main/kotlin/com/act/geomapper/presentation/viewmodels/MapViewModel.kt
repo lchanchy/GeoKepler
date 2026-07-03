@@ -27,6 +27,8 @@ data class MapUiState(
     val capturaRecuperada   : Int            = 0,
     val editingPredio       : Predio?        = null,
     val navegacionDestino   : PuntoGps?      = null,
+    val replanteoDestinos   : List<Pair<String, PuntoGps>> = emptyList(),
+    val replanteoIndice     : Int            = 0,
     val error               : String?        = null,
     // Última posición conocida del mapa — se restaura al recrear MapScreen
     val lastMapLat          : Double         = 4.6097,
@@ -188,7 +190,54 @@ class MapViewModel(
     }
 
     fun detenerNavegacion() {
-        _uiState.update { it.copy(navegacionDestino = null) }
+        _uiState.update { it.copy(
+            navegacionDestino = null,
+            replanteoDestinos = emptyList(),
+            replanteoIndice   = 0
+        ) }
+    }
+
+    // ── Replanteo: navega por lista de puntos ─────────────────────────────────
+    fun iniciarReplanteo(predios: List<Predio>) {
+        val destinos = predios
+            .filter { it.geometry.geometryType == "Point" }
+            .map { p -> Pair(p.nombre, PuntoGps(p.geometry.coordinate.y, p.geometry.coordinate.x)) }
+        if (destinos.isEmpty()) return
+        _uiState.update { it.copy(
+            replanteoDestinos = destinos,
+            replanteoIndice   = 0,
+            navegacionDestino = destinos[0].second
+        ) }
+    }
+
+    fun replanteoSiguiente() {
+        val st = _uiState.value
+        if (st.replanteoDestinos.isEmpty()) return
+        val nuevo = (st.replanteoIndice + 1) % st.replanteoDestinos.size
+        _uiState.update { it.copy(
+            replanteoIndice   = nuevo,
+            navegacionDestino = st.replanteoDestinos[nuevo].second
+        ) }
+    }
+
+    fun replanteoAnterior() {
+        val st = _uiState.value
+        if (st.replanteoDestinos.isEmpty()) return
+        val n    = st.replanteoDestinos.size
+        val nuevo = (st.replanteoIndice - 1 + n) % n
+        _uiState.update { it.copy(
+            replanteoIndice   = nuevo,
+            navegacionDestino = st.replanteoDestinos[nuevo].second
+        ) }
+    }
+
+    fun replanteoSeleccionar(indice: Int) {
+        val st = _uiState.value
+        if (indice !in st.replanteoDestinos.indices) return
+        _uiState.update { it.copy(
+            replanteoIndice   = indice,
+            navegacionDestino = st.replanteoDestinos[indice].second
+        ) }
     }
 
     // ── Persistencia de captura en curso ──────────────────────────────────────
