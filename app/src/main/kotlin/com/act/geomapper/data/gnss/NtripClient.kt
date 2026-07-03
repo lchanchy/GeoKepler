@@ -21,7 +21,7 @@ data class NtripConfig(
     val contrasena : String = ""
 )
 
-class NtripClient(private val btService: GnssBluetoothService) {
+class NtripClient(private val gnssDevice: IGnssDevice) {
 
     private val RECONEXION_DELAY_MS = 5_000L
     private val MAX_REINTENTOS      = 3
@@ -90,7 +90,7 @@ class NtripClient(private val btService: GnssBluetoothService) {
                     }
 
                     // Enviar GGA al caster si hay fix disponible (necesario para VRS)
-                    btService.fixActual.value?.let { fix ->
+                    gnssDevice.fixActual.value?.let { fix ->
                         val gga = generarGGA(fix)
                         runCatching {
                             socket.outputStream.write(gga.toByteArray(Charsets.US_ASCII))
@@ -112,7 +112,7 @@ class NtripClient(private val btService: GnssBluetoothService) {
                     while (isActive) {
                         val n = rawIn.read(buffer)
                         if (n <= 0) break
-                        btService.enviarDatos(buffer.copyOf(n))
+                        gnssDevice.enviarDatos(buffer.copyOf(n))
                         _bytesRecibidos.value += n
                         bytesEnVentana += n
                         val ahora = System.currentTimeMillis()

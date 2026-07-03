@@ -26,8 +26,8 @@ sealed class LoggerEstado {
  *      El writeJob continúa hasta vaciar los items pendientes antes de cerrar el archivo.
  */
 class GnssLoggerService(
-    context   : Context,
-    private val btService: GnssBluetoothService
+    context              : Context,
+    private val lineaRaw : kotlinx.coroutines.flow.SharedFlow<String>
 ) {
     private val dir   = context.getExternalFilesDir(null) ?: context.filesDir
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -53,7 +53,7 @@ class GnssLoggerService(
 
         // Etapa 1: SharedFlow → Channel UNLIMITED (nunca bloquea al hilo BT)
         collectJob = scope.launch {
-            btService.lineaRaw.collect { ch.trySend(it) }
+            lineaRaw.collect { ch.trySend(it) }
         }
 
         // Etapa 2: Channel → disco

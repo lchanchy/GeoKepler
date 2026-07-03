@@ -41,6 +41,7 @@ import com.act.geomapper.data.gnss.BtGnssEstado
 import com.act.geomapper.data.gnss.LoggerEstado
 import com.act.geomapper.data.gnss.NtripConfig
 import com.act.geomapper.data.gnss.NtripEstado
+import com.act.geomapper.data.gnss.WifiGnssEstado
 import com.act.geomapper.domain.models.EstadoGps
 import com.act.geomapper.ui.theme.GlassBox
 import com.act.geomapper.ui.theme.GlassLightBox
@@ -54,6 +55,7 @@ val VerdeTeal   = Color(0xFF00838F)
 fun HeaderCard(
     estadoGps            : EstadoGps,
     estadoBt             : BtGnssEstado             = BtGnssEstado.Desconectado,
+    estadoWifi           : WifiGnssEstado            = WifiGnssEstado.Desconectado,
     estadoNtrip          : NtripEstado               = NtripEstado.Desconectado,
     estadoLogger         : LoggerEstado              = LoggerEstado.Detenido,
     ultimoArchivoLogger  : java.io.File?             = null,
@@ -63,6 +65,8 @@ fun HeaderCard(
     onBuscarDispositivos : () -> Unit                = {},
     onConectarBt         : (BluetoothDevice) -> Unit = {},
     onDesconectarBt      : () -> Unit                = {},
+    onConectarWifi       : (String, Int) -> Unit     = { _, _ -> },
+    onDesconectarWifi    : () -> Unit                = {},
     onConectarNtrip      : (NtripConfig) -> Unit     = {},
     onDesconectarNtrip   : () -> Unit                = {},
     onIniciarGrabacion   : () -> Unit                = {},
@@ -102,15 +106,23 @@ fun HeaderCard(
         else                       -> Color(0xFFEF5350)
     }
 
-    // Chip GNSS externo: verde RTK cuando BT+NTRIP activos, azul solo BT, gris apagado
-    val btConectado     = estadoBt    is BtGnssEstado.Conectado
+    // Chip GNSS externo: verde RTK cuando BT/WiFi+NTRIP activos
+    val btConectado    = estadoBt   is BtGnssEstado.Conectado
+    val wifiConectado  = estadoWifi is WifiGnssEstado.Conectado
+    val wifiConectando = estadoWifi == WifiGnssEstado.Conectando
     val ntripConectado  = estadoNtrip is NtripEstado.Conectado
     val ntripConectando = estadoNtrip == NtripEstado.Conectando
-    val gnssConectando  = estadoBt == BtGnssEstado.Conectando || ntripConectando
+    val gnssConectando  = estadoBt   == BtGnssEstado.Conectando || ntripConectando || wifiConectando
 
     val (colorGnss, textoGnss, iconGnss) = when {
-        btConectado && ntripConectado ->
+        (btConectado || wifiConectado) && ntripConectado ->
             Triple(Color(0xFF2E7D32), "RTK·ON", Icons.Default.SatelliteAlt)
+        wifiConectado ->
+            Triple(Color(0xFF00C853), "WiFi·ON", Icons.Default.Wifi)
+        wifiConectando ->
+            Triple(Color(0xFF42A5F5), "WiFi·…", Icons.Default.Wifi)
+        estadoWifi is WifiGnssEstado.Error ->
+            Triple(Color(0xFFB71C1C), "WiFi·ERR", Icons.Default.WifiOff)
         btConectado ->
             Triple(Color(0xFF1565C0), "BT·ON", Icons.Default.Bluetooth)
         gnssConectando ->
@@ -260,6 +272,7 @@ fun HeaderCard(
     if (mostrarDialogGnss) {
         GnssDialog(
             estadoBt             = estadoBt,
+            estadoWifi           = estadoWifi,
             estadoNtrip          = estadoNtrip,
             estadoLogger         = estadoLogger,
             ultimoArchivoLogger  = ultimoArchivoLogger,
@@ -269,6 +282,8 @@ fun HeaderCard(
             onBuscar             = onBuscarDispositivos,
             onConectarBt         = onConectarBt,
             onDesconectarBt      = onDesconectarBt,
+            onConectarWifi       = onConectarWifi,
+            onDesconectarWifi    = onDesconectarWifi,
             onConectarNtrip      = onConectarNtrip,
             onDesconectarNtrip   = onDesconectarNtrip,
             onIniciarGrabacion   = onIniciarGrabacion,
@@ -283,6 +298,7 @@ fun HeaderCard(
 @Composable
 private fun GnssDialog(
     estadoBt             : BtGnssEstado,
+    estadoWifi           : WifiGnssEstado,
     estadoNtrip          : NtripEstado,
     estadoLogger         : LoggerEstado,
     ultimoArchivoLogger  : java.io.File?,
@@ -292,6 +308,8 @@ private fun GnssDialog(
     onBuscar             : () -> Unit,
     onConectarBt         : (BluetoothDevice) -> Unit,
     onDesconectarBt      : () -> Unit,
+    onConectarWifi       : (String, Int) -> Unit,
+    onDesconectarWifi    : () -> Unit,
     onConectarNtrip      : (NtripConfig) -> Unit,
     onDesconectarNtrip   : () -> Unit,
     onIniciarGrabacion   : () -> Unit,
@@ -320,14 +338,16 @@ private fun GnssDialog(
 
                 TabRow(selectedTabIndex = tab, containerColor = Color.Transparent, contentColor = Color.White) {
                     Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Bluetooth", fontSize = 12.sp) })
-                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("NTRIP",     fontSize = 12.sp) })
+                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("WiFi TCP",  fontSize = 12.sp) })
+                    Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("NTRIP",     fontSize = 12.sp) })
                 }
 
                 Spacer(Modifier.height(12.dp))
 
                 when (tab) {
                     0 -> BtTab(estadoBt, estadoLogger, ultimoArchivoLogger, dispositivos, onBuscar, onConectarBt, onDesconectarBt, onIniciarGrabacion, onDetenerGrabacion, onCompartirGrabacion, onDismiss)
-                    1 -> NtripTab(estadoNtrip, bytesRecibidosNtrip, velocidadNtrip, estadoLogger, ultimoArchivoLogger, onConectarNtrip, onDesconectarNtrip, onDismiss)
+                    1 -> WifiTab(estadoWifi, estadoLogger, ultimoArchivoLogger, onConectarWifi, onDesconectarWifi, onIniciarGrabacion, onDetenerGrabacion, onCompartirGrabacion, onDismiss)
+                    2 -> NtripTab(estadoNtrip, bytesRecibidosNtrip, velocidadNtrip, estadoLogger, ultimoArchivoLogger, onConectarNtrip, onDesconectarNtrip, onDismiss)
                 }
             }
         }
@@ -421,6 +441,129 @@ private fun BtTab(
                 Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Actualizar lista")
+            }
+        }
+    }
+}
+
+@Composable
+private fun WifiTab(
+    estado              : WifiGnssEstado,
+    estadoLogger        : LoggerEstado,
+    ultimoArchivo       : java.io.File?,
+    onConectar          : (String, Int) -> Unit,
+    onDesconectar       : () -> Unit,
+    onIniciarGrabacion  : () -> Unit,
+    onDetenerGrabacion  : () -> Unit,
+    onCompartirGrabacion: () -> Unit,
+    onDismiss           : () -> Unit
+) {
+    val ctx    = LocalContext.current
+    val prefs  = remember { ctx.getSharedPreferences("gnss_wifi", android.content.Context.MODE_PRIVATE) }
+    var ip     by remember { mutableStateOf(prefs.getString("ip", "") ?: "") }
+    var puerto by remember { mutableStateOf(prefs.getString("puerto", "") ?: "") }
+
+    val (colorEstado, textoEstado) = when (estado) {
+        is WifiGnssEstado.Conectado  -> Color(0xFF4CAF50) to "Conectado: ${estado.host}:${estado.puerto}"
+        WifiGnssEstado.Conectando    -> Color(0xFF42A5F5) to "Conectando…"
+        is WifiGnssEstado.Error      -> Color(0xFFEF5350) to "Error: ${estado.mensaje}"
+        WifiGnssEstado.Desconectado  -> Color(0xFF78909C) to "Desconectado"
+    }
+
+    GlassBox(shape = RoundedCornerShape(10.dp)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(shape = CircleShape, color = colorEstado, modifier = Modifier.size(10.dp)) {}
+            Text(textoEstado, color = Color.White, fontSize = 13.sp,
+                fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+
+    Spacer(Modifier.height(10.dp))
+
+    when (estado) {
+        is WifiGnssEstado.Conectado -> {
+            Button(
+                onClick  = { onDesconectar(); onDismiss() },
+                colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.WifiOff, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Desconectar")
+            }
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = Color.White.copy(0.15f))
+            Spacer(Modifier.height(8.dp))
+            LoggerControles(estadoLogger, ultimoArchivo, onIniciarGrabacion, onDetenerGrabacion, onCompartirGrabacion)
+        }
+        is WifiGnssEstado.Error -> {
+            Button(
+                onClick  = { onDesconectar() },
+                colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF546E7A)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.WifiOff, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Limpiar error")
+            }
+        }
+        else -> {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value         = ip,
+                    onValueChange = { ip = it },
+                    label         = { Text("IP del receptor", fontSize = 11.sp) },
+                    placeholder   = { Text("192.168.1.100", color = Color.White.copy(0.3f)) },
+                    singleLine    = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier      = Modifier.fillMaxWidth(),
+                    colors        = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor     = Color.White, unfocusedTextColor = Color.White,
+                        focusedBorderColor   = Color(0xFF00838F),
+                        unfocusedBorderColor = Color.White.copy(0.3f),
+                        focusedLabelColor    = Color(0xFF4DD0E1),
+                        unfocusedLabelColor  = Color.White.copy(0.4f)
+                    )
+                )
+                OutlinedTextField(
+                    value         = puerto,
+                    onValueChange = { puerto = it },
+                    label         = { Text("Puerto TCP", fontSize = 11.sp) },
+                    placeholder   = { Text("ej. 9001", color = Color.White.copy(0.3f)) },
+                    singleLine    = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier      = Modifier.fillMaxWidth(),
+                    colors        = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor     = Color.White, unfocusedTextColor = Color.White,
+                        focusedBorderColor   = Color(0xFF00838F),
+                        unfocusedBorderColor = Color.White.copy(0.3f),
+                        focusedLabelColor    = Color(0xFF4DD0E1),
+                        unfocusedLabelColor  = Color.White.copy(0.4f)
+                    )
+                )
+                Text(
+                    "Conéctese al WiFi del receptor antes de conectar",
+                    color    = Color.White.copy(0.5f),
+                    fontSize = 10.sp
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Button(
+                onClick  = {
+                    val p = puerto.trim().toIntOrNull()
+                    if (ip.trim().isNotBlank() && p != null) {
+                        prefs.edit().putString("ip", ip.trim()).putString("puerto", puerto.trim()).apply()
+                        onConectar(ip.trim(), p)
+                    }
+                },
+                enabled  = ip.trim().isNotBlank() && puerto.trim().toIntOrNull() != null && estado != WifiGnssEstado.Conectando,
+                colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF00838F)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Wifi, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Conectar")
             }
         }
     }

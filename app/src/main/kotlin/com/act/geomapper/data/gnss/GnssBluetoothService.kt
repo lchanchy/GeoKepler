@@ -21,7 +21,7 @@ sealed class BtGnssEstado {
     data class Error(val mensaje: String)    : BtGnssEstado()
 }
 
-class GnssBluetoothService(context: Context) {
+class GnssBluetoothService(context: Context) : IGnssDevice {
 
     private val SPP_UUID            = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val RECONEXION_DELAY_MS = 3_000L
@@ -38,14 +38,14 @@ class GnssBluetoothService(context: Context) {
     val estado: StateFlow<BtGnssEstado> = _estado.asStateFlow()
 
     private val _fixActual = MutableStateFlow<GnssFix?>(null)
-    val fixActual: StateFlow<GnssFix?> = _fixActual.asStateFlow()
+    override val fixActual: StateFlow<GnssFix?> = _fixActual.asStateFlow()
 
     // 4096 líneas ≈ ~13 min a 5 Hz — DROP_OLDEST solo si el logger es extremadamente lento
     private val _lineaRaw = MutableSharedFlow<String>(
         extraBufferCapacity = 4096,
         onBufferOverflow    = BufferOverflow.DROP_OLDEST
     )
-    val lineaRaw: SharedFlow<String> = _lineaRaw.asSharedFlow()
+    override val lineaRaw: SharedFlow<String> = _lineaRaw.asSharedFlow()
 
     private val _dispositivosEmparejados = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val dispositivosEmparejados: StateFlow<List<BluetoothDevice>> = _dispositivosEmparejados.asStateFlow()
@@ -102,7 +102,7 @@ class GnssBluetoothService(context: Context) {
     }
 
     /** Envía datos binarios (RTCM) al receptor GNSS vía la misma conexión BT. */
-    fun enviarDatos(data: ByteArray) {
+    override fun enviarDatos(data: ByteArray) {
         scope.launch {
             writeMutex.withLock {
                 runCatching {

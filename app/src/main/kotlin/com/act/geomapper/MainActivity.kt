@@ -42,9 +42,21 @@ import com.act.geomapper.presentation.components.*
 import com.act.geomapper.presentation.screens.*
 import com.act.geomapper.presentation.viewmodels.*
 import com.act.geomapper.security.RootDetector
+import com.act.geomapper.data.gnss.BtGnssEstado
 import com.act.geomapper.data.gnss.GnssBluetoothService
 import com.act.geomapper.data.gnss.GnssLoggerService
+import com.act.geomapper.data.gnss.GnssWifiService
+import com.act.geomapper.data.gnss.IGnssDevice
 import com.act.geomapper.data.gnss.NtripClient
+import com.act.geomapper.data.gnss.WifiGnssEstado
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.launch
 import com.act.geomapper.ui.theme.GeoMapperTheme
 
 class MainActivity : ComponentActivity() {
@@ -53,8 +65,30 @@ class MainActivity : ComponentActivity() {
     private val db                   by lazy { AppDatabase.getInstance(this) }
     private val gpsService           by lazy { GpsService(this) }
     private val gnssBluetoothService by lazy { GnssBluetoothService(this) }
-    private val ntripClient          by lazy { NtripClient(gnssBluetoothService) }
-    private val gnssLoggerService    by lazy { GnssLoggerService(this, gnssBluetoothService) }
+    private val gnssWifiService      by lazy { GnssWifiService() }
+
+    // Flujos fusionados: NMEA y fix de BT o WiFi, el que esté activo
+    private val _gnssLineaMerged = MutableSharedFlow<String>(
+        extraBufferCapacity = 4096, onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    private val _gnssFixMerged = MutableStateFlow<com.act.geomapper.data.gnss.GnssFix?>(null)
+
+    // Mediador IGnssDevice: NtripClient lo usa para GGA y para enviar RTCM
+    private val gnssMediator by lazy {
+        object : IGnssDevice {
+            override val lineaRaw  = _gnssLineaMerged.asSharedFlow()
+            override val fixActual = _gnssFixMerged.asStateFlow()
+            override fun enviarDatos(data: ByteArray) {
+                if (gnssBluetoothService.estado.value is BtGnssEstado.Conectado)
+                    gnssBluetoothService.enviarDatos(data)
+                else if (gnssWifiService.estado.value is WifiGnssEstado.Conectado)
+                    gnssWifiService.enviarDatos(data)
+            }
+        }
+    }
+
+    private val ntripClient       by lazy { NtripClient(gnssMediator) }
+    private val gnssLoggerService by lazy { GnssLoggerService(this, _gnssLineaMerged) }
     private val geometryService by lazy { GeometryService() }
     private val proyectoRepo    by lazy { ProyectoRepositoryImpl(db.proyectoDao()) }
     private val predioRepo      by lazy { PredioRepositoryImpl(db.predioDao()) }
@@ -111,6 +145,18 @@ class MainActivity : ComponentActivity() {
         // Iniciar ForegroundService para mantener GPS vivo en background
         GeoKeplerService.iniciar(this)
 
+        // Fusionar NMEA y fix de BT + WiFi en un único flujo que usan el logger y NtripClient
+        lifecycleScope.launch {
+            merge(gnssBluetoothService.lineaRaw, gnssWifiService.lineaRaw)
+                .collect { _gnssLineaMerged.tryEmit(it) }
+        }
+        lifecycleScope.launch {
+            merge(
+                gnssBluetoothService.fixActual.filterNotNull(),
+                gnssWifiService.fixActual.filterNotNull()
+            ).collect { _gnssFixMerged.value = it }
+        }
+
         // SAF file picker para importar
         val safLauncher = registerForActivityResult(
             ActivityResultContracts.OpenDocument()
@@ -149,16 +195,17 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 AppRoot(
-                    proyectoVM    = proyectoViewModel,
-                    mapVM         = mapViewModel,
-                    settingsVM    = settingsViewModel,
-                    predioVM      = predioViewModel,
-                    parcelacionVM = parcelacionViewModel,
-                    importVM      = importViewModel,
-                    gnssService   = gnssBluetoothService,
-                    ntrip         = ntripClient,
-                    logger        = gnssLoggerService,
-                    onAbrirPicker = {
+                    proyectoVM      = proyectoViewModel,
+                    mapVM           = mapViewModel,
+                    settingsVM      = settingsViewModel,
+                    predioVM        = predioViewModel,
+                    parcelacionVM   = parcelacionViewModel,
+                    importVM        = importViewModel,
+                    gnssService     = gnssBluetoothService,
+                    gnssWifiService = gnssWifiService,
+                    ntrip           = ntripClient,
+                    logger          = gnssLoggerService,
+                    onAbrirPicker   = {
                         safLauncher.launch(arrayOf(
                             "application/json", "*/*",
                             "application/vnd.google-earth.kml+xml",
@@ -216,6 +263,7 @@ class MainActivity : ComponentActivity() {
         gnssLoggerService.release()
         ntripClient.release()
         gnssBluetoothService.release()
+        gnssWifiService.release()
     }
 }
 
@@ -225,16 +273,17 @@ enum class Pantalla { SPLASH, MAPA, CONFIGURACION, PARCELACION }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppRoot(
-    proyectoVM   : ProyectoViewModel,
-    mapVM        : MapViewModel,
-    settingsVM   : SettingsViewModel,
-    predioVM     : PredioViewModel,
-    parcelacionVM: ParcelacionViewModel,
-    importVM     : ImportViewModel,
-    gnssService  : com.act.geomapper.data.gnss.GnssBluetoothService,
-    ntrip        : NtripClient,
-    logger       : GnssLoggerService,
-    onAbrirPicker: () -> Unit
+    proyectoVM      : ProyectoViewModel,
+    mapVM           : MapViewModel,
+    settingsVM      : SettingsViewModel,
+    predioVM        : PredioViewModel,
+    parcelacionVM   : ParcelacionViewModel,
+    importVM        : ImportViewModel,
+    gnssService     : com.act.geomapper.data.gnss.GnssBluetoothService,
+    gnssWifiService : com.act.geomapper.data.gnss.GnssWifiService,
+    ntrip           : NtripClient,
+    logger          : GnssLoggerService,
+    onAbrirPicker   : () -> Unit
 ) {
     var pantalla            by remember { mutableStateOf(Pantalla.SPLASH) }
     var basemapActual       by remember { mutableStateOf<com.act.geomapper.presentation.components.Basemap>(com.act.geomapper.presentation.components.Basemap.OSM) }
@@ -272,6 +321,7 @@ private fun AppRoot(
             Pantalla.MAPA          -> MapaApp(
                 proyectoVM, mapVM, settingsVM, predioVM, importVM, onAbrirPicker,
                 gnssService     = gnssService,
+                gnssWifiService = gnssWifiService,
                 ntrip           = ntrip,
                 logger          = logger,
                 basemapActual   = basemapActual,
@@ -292,6 +342,7 @@ private fun MapaApp(
     importVM        : ImportViewModel,
     onAbrirPicker   : () -> Unit,
     gnssService     : com.act.geomapper.data.gnss.GnssBluetoothService,
+    gnssWifiService : com.act.geomapper.data.gnss.GnssWifiService,
     ntrip           : NtripClient,
     logger          : GnssLoggerService,
     basemapActual   : com.act.geomapper.presentation.components.Basemap,
@@ -307,6 +358,7 @@ private fun MapaApp(
     val importState   by importVM.state.collectAsStateWithLifecycle()
     val estadoBt          by gnssService.estado.collectAsStateWithLifecycle()
     val dispositivosBt    by gnssService.dispositivosEmparejados.collectAsStateWithLifecycle()
+    val estadoWifiGnss    by gnssWifiService.estado.collectAsStateWithLifecycle()
     val estadoNtrip       by ntrip.estado.collectAsStateWithLifecycle()
     val bytesNtrip        by ntrip.bytesRecibidos.collectAsStateWithLifecycle()
     val velocidadNtrip    by ntrip.velocidadKbs.collectAsStateWithLifecycle()
@@ -399,6 +451,7 @@ private fun MapaApp(
         HeaderCard(
             estadoGps            = mapState.estadoGps,
             estadoBt             = estadoBt,
+            estadoWifi           = estadoWifiGnss,
             estadoNtrip          = estadoNtrip,
             estadoLogger         = estadoLogger,
             ultimoArchivoLogger  = ultimoArchLogger,
@@ -408,6 +461,8 @@ private fun MapaApp(
             onBuscarDispositivos = { gnssService.cargarEmparejados() },
             onConectarBt         = { device -> gnssService.conectar(device) },
             onDesconectarBt      = { gnssService.desconectar() },
+            onConectarWifi       = { ip, puerto -> gnssWifiService.conectar(ip, puerto) },
+            onDesconectarWifi    = { gnssWifiService.desconectar() },
             onConectarNtrip      = { cfg -> ntrip.conectar(cfg) },
             onDesconectarNtrip   = { ntrip.desconectar() },
             onIniciarGrabacion   = { logger.iniciarGrabacion() },
