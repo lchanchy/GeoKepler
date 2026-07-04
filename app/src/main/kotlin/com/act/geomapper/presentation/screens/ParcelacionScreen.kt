@@ -88,9 +88,11 @@ fun ParcelacionScreen(
     val azimut  = rememberAzimut()
 
     var mostrarSelectorPoligono by remember { mutableStateOf(false) }
-    var mostrarEditorParcelas  by remember { mutableStateOf(false) }
+    var mostrarEditorParcelas   by remember { mutableStateOf(false) }
     var conRelleno              by remember { mutableStateOf(true) }
     var centroDiana             by remember { mutableStateOf(GeoPoint(4.6097, -74.0817)) }
+    var mostrarEtiquetaArea     by remember { mutableStateOf(true) }
+    var mostrarEtiquetaDist     by remember { mutableStateOf(true) }
 
     val s = LocalStrings.current
     val titulo = when (state.modo) {
@@ -176,10 +178,11 @@ fun ParcelacionScreen(
         mapView.invalidate()
     }
 
-    // Centrar y dibujar polígono al seleccionar o cambiar relleno
-    LaunchedEffect(state.predioBase, conRelleno) {
+    // Centrar y dibujar polígono al seleccionar, cambiar relleno o togglear etiquetas
+    LaunchedEffect(state.predioBase, conRelleno, mostrarEtiquetaArea, mostrarEtiquetaDist) {
         state.predioBase?.let { predio ->
-            dibujarPoligonoBase(mapView, predio, state.segmentos, state.areaHa, conRelleno, areaUnit, distanceUnit)
+            dibujarPoligonoBase(mapView, predio, state.segmentos, state.areaHa, conRelleno,
+                areaUnit, distanceUnit, mostrarEtiquetaArea, mostrarEtiquetaDist)
             val centroid = predio.geometry.centroid.coordinate
             mapView.controller.animateTo(GeoPoint(centroid.y, centroid.x))
         }
@@ -233,9 +236,11 @@ fun ParcelacionScreen(
     }
 
     // Dibujar subparcelas resultado con etiquetas de área y distancia (vía: sin etiquetas)
-    LaunchedEffect(state.subparcelas, state.esVia, areaUnit, distanceUnit) {
+    LaunchedEffect(state.subparcelas, state.esVia, areaUnit, distanceUnit, mostrarEtiquetaArea, mostrarEtiquetaDist) {
         if (state.subparcelas.isNotEmpty()) {
-            dibujarSubparcelas(mapView, state.subparcelas, areaUnit, distanceUnit, conEtiquetas = !state.esVia)
+            dibujarSubparcelas(mapView, state.subparcelas, areaUnit, distanceUnit,
+                conEtiquetasArea = !state.esVia && mostrarEtiquetaArea,
+                conEtiquetasDist = !state.esVia && mostrarEtiquetaDist)
         } else {
             mapView.overlays.removeAll { it is SubparcelaPolygon }
             mapView.overlays.removeAll { it is Marker && (it as Marker).id == TAG_SUBPARCELA_LBL }
@@ -264,6 +269,32 @@ fun ParcelacionScreen(
                 .statusBarsPadding()
                 .padding(top = 70.dp, end = 10.dp)
         )
+
+        // ── Toggles de etiquetas — sutiles, bajo la brújula ──────────────
+        AnimatedVisibility(
+            visible  = state.predioBase != null,
+            enter    = fadeIn(),
+            exit     = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 120.dp, end = 10.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                EtiquetaToggle(
+                    activo  = mostrarEtiquetaArea,
+                    icon    = Icons.Default.SquareFoot,
+                    titulo  = "Área",
+                    onClick = { mostrarEtiquetaArea = !mostrarEtiquetaArea }
+                )
+                EtiquetaToggle(
+                    activo  = mostrarEtiquetaDist,
+                    icon    = Icons.Default.Straighten,
+                    titulo  = "Lados",
+                    onClick = { mostrarEtiquetaDist = !mostrarEtiquetaDist }
+                )
+            }
+        }
 
         // ── Cards compactas de configuración ─────────────────────────────
         AnimatedVisibility(
@@ -1101,6 +1132,32 @@ private fun ParcelaEditRow(
     }
 }
 
+// ── Botón toggle de etiqueta (área / distancia) ───────────────────────────────
+
+@Composable
+private fun EtiquetaToggle(
+    activo : Boolean,
+    icon   : androidx.compose.ui.graphics.vector.ImageVector,
+    titulo : String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick      = onClick,
+        shape        = RoundedCornerShape(8.dp),
+        color        = Color(0xFF0D2B4E).copy(alpha = if (activo) 0.85f else 0.40f),
+        modifier     = Modifier.size(30.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = titulo,
+                tint = Color.White.copy(alpha = if (activo) 1f else 0.35f),
+                modifier = Modifier.size(15.dp)
+            )
+        }
+    }
+}
+
 // ── Diana crosshair (modo trazo) ─────────────────────────────────────────────
 
 @Composable
@@ -1215,7 +1272,9 @@ private fun dibujarPoligonoBase(
     areaHa       : Double,
     conRelleno   : Boolean = true,
     areaUnit     : com.act.geomapper.data.settings.AreaUnit     = com.act.geomapper.data.settings.AreaUnit.HECTARES,
-    distanceUnit : com.act.geomapper.data.settings.DistanceUnit = com.act.geomapper.data.settings.DistanceUnit.METERS
+    distanceUnit : com.act.geomapper.data.settings.DistanceUnit = com.act.geomapper.data.settings.DistanceUnit.METERS,
+    mostrarArea  : Boolean = true,
+    mostrarDist  : Boolean = true
 ) {
     mapView.overlays.removeAll { it is PoligonoBasePolygon }
     mapView.overlays.removeAll { it is Marker  && (it as Marker).id in setOf(TAG_DIST_LABEL, TAG_AREA_LABEL_PARC) }
@@ -1234,48 +1293,51 @@ private fun dibujarPoligonoBase(
     }
 
     // ── Etiqueta de ÁREA en el centroide (zoom ≥ 13, fondo oscuro) ───────────
-    val textoArea = "%.2f".format(
-        when (areaUnit) {
-            com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaHa * 10_000
-            com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
-            com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
+    if (mostrarArea) {
+        val textoArea = "%.2f".format(
+            when (areaUnit) {
+                com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> areaHa * 10_000
+                com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> areaHa / 100
+                com.act.geomapper.data.settings.AreaUnit.HECTARES          -> areaHa
+            }
+        ) + when (areaUnit) {
+            com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
+            com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
+            com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
         }
-    ) + when (areaUnit) {
-        com.act.geomapper.data.settings.AreaUnit.SQUARE_METERS     -> " m²"
-        com.act.geomapper.data.settings.AreaUnit.SQUARE_KILOMETERS -> " km²"
-        com.act.geomapper.data.settings.AreaUnit.HECTARES          -> " ha"
-    }
-    ParcMinZoomMarker(mapView, 13.0).apply {
-        id       = TAG_AREA_LABEL_PARC
-        position = GeoPoint(centroid.y, centroid.x)
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-        icon     = crearChipArea(mapView.context, textoArea)
-        mapView.overlays.add(this)
+        ParcMinZoomMarker(mapView, 13.0).apply {
+            id       = TAG_AREA_LABEL_PARC
+            position = GeoPoint(centroid.y, centroid.x)
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            icon     = crearChipArea(mapView.context, textoArea)
+            mapView.overlays.add(this)
+        }
     }
 
     // ── Etiquetas de DISTANCIA por lado (zoom ≥ 15, chip naranja) ────────────
-    // Offset 30% hacia el centroide → lados compartidos quedan en lados opuestos
-    val rawCoords = predio.geometry.coordinates
-    for (i in 0 until rawCoords.size - 1) {
-        val c1 = rawCoords[i]; val c2 = rawCoords[i + 1]
-        val seg = segmentos.getOrNull(i)
-        val distM = seg?.distanciaMetros ?: haversineParcM(c1.y, c1.x, c2.y, c2.x)
-        if (distM < 0.5) continue
-        val texto = when (distanceUnit) {
-            com.act.geomapper.data.settings.DistanceUnit.KILOMETERS ->
-                "%.2f km".format(distM / 1000.0)
-            else ->
-                if (distM >= 1000) "%.2f km".format(distM / 1000.0)
-                else "%.1f m".format(distM)
-        }
-        val midLat = (c1.y + c2.y) / 2 + (centroid.y - (c1.y + c2.y) / 2) * 0.30
-        val midLon = (c1.x + c2.x) / 2 + (centroid.x - (c1.x + c2.x) / 2) * 0.30
-        ParcMinZoomMarker(mapView, 15.0).apply {
-            id       = TAG_DIST_LABEL
-            position = GeoPoint(midLat, midLon)
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-            icon     = crearChipNaranja(mapView.context, texto)
-            mapView.overlays.add(this)
+    if (mostrarDist) {
+        val rawCoords = predio.geometry.coordinates
+        for (i in 0 until rawCoords.size - 1) {
+            val c1 = rawCoords[i]; val c2 = rawCoords[i + 1]
+            val seg   = segmentos.getOrNull(i)
+            val distM = seg?.distanciaMetros ?: haversineParcM(c1.y, c1.x, c2.y, c2.x)
+            if (distM < 0.5) continue
+            val texto = when (distanceUnit) {
+                com.act.geomapper.data.settings.DistanceUnit.KILOMETERS ->
+                    "%.2f km".format(distM / 1000.0)
+                else ->
+                    if (distM >= 1000) "%.2f km".format(distM / 1000.0)
+                    else "%.1f m".format(distM)
+            }
+            val midLat = (c1.y + c2.y) / 2 + (centroid.y - (c1.y + c2.y) / 2) * 0.30
+            val midLon = (c1.x + c2.x) / 2 + (centroid.x - (c1.x + c2.x) / 2) * 0.30
+            ParcMinZoomMarker(mapView, 15.0).apply {
+                id       = TAG_DIST_LABEL
+                position = GeoPoint(midLat, midLon)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                icon     = crearChipNaranja(mapView.context, texto)
+                mapView.overlays.add(this)
+            }
         }
     }
 
@@ -1312,11 +1374,12 @@ private fun dibujarLineaEnCurso(
 }
 
 private fun dibujarSubparcelas(
-    mapView      : MapView,
-    wkts         : List<String>,
-    areaUnit     : com.act.geomapper.data.settings.AreaUnit     = com.act.geomapper.data.settings.AreaUnit.HECTARES,
-    distanceUnit : com.act.geomapper.data.settings.DistanceUnit = com.act.geomapper.data.settings.DistanceUnit.METERS,
-    conEtiquetas : Boolean = true
+    mapView          : MapView,
+    wkts             : List<String>,
+    areaUnit         : com.act.geomapper.data.settings.AreaUnit     = com.act.geomapper.data.settings.AreaUnit.HECTARES,
+    distanceUnit     : com.act.geomapper.data.settings.DistanceUnit = com.act.geomapper.data.settings.DistanceUnit.METERS,
+    conEtiquetasArea : Boolean = true,
+    conEtiquetasDist : Boolean = true
 ) {
     mapView.overlays.removeAll { it is SubparcelaPolygon }
     mapView.overlays.removeAll { it is Marker && (it as Marker).id == TAG_SUBPARCELA_LBL }
@@ -1338,8 +1401,8 @@ private fun dibujarSubparcelas(
                 mapView.overlays.add(this)
             }
 
-            if (conEtiquetas) {
-                // ── Etiqueta de ÁREA en el centroide ──────────────────────
+            // ── Etiqueta de ÁREA en el centroide ──────────────────────────
+            if (conEtiquetasArea) {
                 val areaM2 = geom.area * 111_320.0 * (111_320.0 * Math.cos(Math.toRadians(4.0)))
                 val areaHa = areaM2 / 10_000.0
                 val textoArea = "%.2f".format(when (areaUnit) {
@@ -1358,8 +1421,10 @@ private fun dibujarSubparcelas(
                     icon     = crearChipArea(mapView.context, textoArea)
                     mapView.overlays.add(this)
                 }
+            }
 
-                // ── Etiquetas de DISTANCIA por lado ───────────────────────
+            // ── Etiquetas de DISTANCIA por lado ───────────────────────────
+            if (conEtiquetasDist) {
                 val raw = geom.coordinates
                 for (i in 0 until raw.size - 1) {
                     val c1 = raw[i]; val c2 = raw[i + 1]
