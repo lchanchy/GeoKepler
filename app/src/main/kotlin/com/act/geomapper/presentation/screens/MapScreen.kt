@@ -72,13 +72,20 @@ fun MapScreen(
     gnssFixMerged   : GnssFix?                    = null,
     btConectado     : Boolean                     = false,
     wifiConectado   : Boolean                     = false,
-    onGuardarEdicion: (Long, org.locationtech.jts.geom.Geometry) -> Unit = { _, _ -> },
-    modifier        : Modifier                    = Modifier
+    onGuardarEdicion        : (Long, org.locationtech.jts.geom.Geometry) -> Unit = { _, _ -> },
+    descargaMapaActiva      : Boolean                                            = false,
+    onDescargaActivaConsumed: () -> Unit                                         = {},
+    onDescargaCompletada    : (com.act.geomapper.data.offline.DescargaOffline) -> Unit = {},
+    modifier                : Modifier                                           = Modifier
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val azimut  = rememberAzimut()
     val win     = rememberWindowInfo()
+
+    var progresoDescarga by remember { mutableStateOf(-1) }
+    var descargaBbox     by remember { mutableStateOf<org.osmdroid.util.BoundingBox?>(null) }
+    val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
 
     LaunchedEffect(Unit) {
         Configuration.getInstance().apply {
@@ -120,6 +127,11 @@ fun MapScreen(
                 }
             })
         }
+    }
+
+    LaunchedEffect(descargaMapaActiva) {
+        if (descargaMapaActiva) descargaBbox = mapView.boundingBox
+        else progresoDescarga = -1
     }
 
     LaunchedEffect(basemapActual) {
@@ -433,6 +445,58 @@ fun MapScreen(
                     .padding(bottom = 100.dp, start = 16.dp, end = 80.dp),
                 action = { TextButton(onClick = viewModel::limpiarError) { Text("OK") } }
             ) { Text(err, fontSize = 13.sp) }
+        }
+
+        // ── Diálogo de descarga de mapa offline ──────────────────────────
+        val bbox = descargaBbox
+        if (descargaMapaActiva && bbox != null) {
+            com.act.geomapper.presentation.components.DescargaMapaDialog(
+                bbox             = bbox,
+                basemapEtiqueta  = basemapActual.etiqueta,
+                progresoDescarga = progresoDescarga,
+                onDismiss = {
+                    if (progresoDescarga !in 0..100) {
+                        progresoDescarga = -1
+                        onDescargaActivaConsumed()
+                    }
+                },
+                onIniciarDescarga = { zoomMax ->
+                    progresoDescarga = 0
+                    val totalRef = intArrayOf(0)
+                    val mgr = org.osmdroid.tileprovider.cachemanager.CacheManager(mapView)
+                    mgr.downloadAreaAsyncNoUI(
+                        context, bbox, 14, zoomMax,
+                        object : org.osmdroid.tileprovider.cachemanager.CacheManager.CacheManagerCallback {
+                            override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax2: Int) {
+                                val pct = if (totalRef[0] > 0) (progress * 100) / totalRef[0] else 0
+                                mainHandler.post { progresoDescarga = pct.coerceIn(0, 99) }
+                            }
+                            override fun downloadStarted() {}
+                            override fun setPossibleTilesInArea(total: Int) { totalRef[0] = total }
+                            override fun onTaskComplete() {
+                                mainHandler.post {
+                                    progresoDescarga = 101
+                                    onDescargaCompletada(
+                                        com.act.geomapper.data.offline.DescargaOffline(
+                                            id      = System.currentTimeMillis(),
+                                            nombre  = "${basemapActual.etiqueta} z14–z$zoomMax",
+                                            norte   = bbox.latNorth,
+                                            sur     = bbox.latSouth,
+                                            este    = bbox.lonEast,
+                                            oeste   = bbox.lonWest,
+                                            zoomMax = zoomMax,
+                                            tiles   = totalRef[0]
+                                        )
+                                    )
+                                }
+                            }
+                            override fun onTaskFailed(errors: Int) {
+                                mainHandler.post { progresoDescarga = -2 }
+                            }
+                        }
+                    )
+                }
+            )
         }
     }
 }

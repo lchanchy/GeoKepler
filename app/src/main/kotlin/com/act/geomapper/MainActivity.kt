@@ -383,8 +383,12 @@ private fun MapaApp(
     var mostrarCapas             by remember { mutableStateOf(false) }
     var entidadParaExportar      by remember { mutableStateOf<com.act.geomapper.domain.models.Predio?>(null) }
     var proyectoParaExportar     by remember { mutableStateOf<com.act.geomapper.domain.models.Proyecto?>(null) }
-    var mostrarImport  by remember { mutableStateOf(false) }
-    var mostrarBasemap by remember { mutableStateOf(false) }
+    var mostrarImport    by remember { mutableStateOf(false) }
+    var mostrarBasemap   by remember { mutableStateOf(false) }
+    var mostrarDescargaMapa by remember { mutableStateOf(false) }
+
+    val appPrefs = remember { context.getSharedPreferences("app_state", android.content.Context.MODE_PRIVATE) }
+    var descargasOffline by remember { mutableStateOf(com.act.geomapper.data.offline.cargarDescargasOffline(appPrefs)) }
 
     // Capas siempre muestra TODAS las entidades — independiente del proyecto activo
     LaunchedEffect(Unit) { predioVM.cargarTodos() }
@@ -452,7 +456,14 @@ private fun MapaApp(
             gnssFixMerged    = gnssFixActual,
             btConectado      = estadoBt is com.act.geomapper.data.gnss.BtGnssEstado.Conectado,
             wifiConectado    = estadoWifiGnss is com.act.geomapper.data.gnss.WifiGnssEstado.Conectado,
-            onGuardarEdicion = { id, geom -> predioVM.actualizarGeometria(id, geom) },
+            onGuardarEdicion         = { id, geom -> predioVM.actualizarGeometria(id, geom) },
+            descargaMapaActiva       = mostrarDescargaMapa,
+            onDescargaActivaConsumed = { mostrarDescargaMapa = false },
+            onDescargaCompletada     = { d ->
+                val nuevas = descargasOffline + d
+                descargasOffline = nuevas
+                com.act.geomapper.data.offline.guardarDescargasOffline(appPrefs, nuevas)
+            },
             modifier         = Modifier.fillMaxSize()
         )
 
@@ -504,10 +515,11 @@ private fun MapaApp(
         // Panel de basemap — se abre con el botón BaseMap del header, sin botón propio
         if (mostrarBasemap) {
             com.act.geomapper.presentation.components.BasemapPanel(
-                seleccionado  = basemapActual,
-                onSeleccionar = { onBasemapChange(it) },
-                onDismiss     = { mostrarBasemap = false },
-                modifier      = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 128.dp, end = 8.dp)
+                seleccionado   = basemapActual,
+                onSeleccionar  = { onBasemapChange(it) },
+                onDismiss      = { mostrarBasemap = false },
+                onDescargarArea = { mostrarBasemap = false; mostrarDescargaMapa = true },
+                modifier       = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 128.dp, end = 8.dp)
             )
         }
 
@@ -635,6 +647,12 @@ private fun MapaApp(
                 mostrarCapas = false
             },
             onEliminarGeoPdf      = { importVM.cerrarGeoPdf() },
+            descargasOffline      = descargasOffline,
+            onEliminarDescarga    = { id ->
+                val nuevas = descargasOffline.filter { it.id != id }
+                descargasOffline = nuevas
+                com.act.geomapper.data.offline.guardarDescargasOffline(appPrefs, nuevas)
+            },
             onDismiss             = { mostrarCapas = false }
         )
     }

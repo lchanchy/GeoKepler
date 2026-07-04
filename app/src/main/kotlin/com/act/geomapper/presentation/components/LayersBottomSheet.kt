@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.act.geomapper.data.geopdf.GeoPdfData
+import com.act.geomapper.data.offline.DescargaOffline
 import com.act.geomapper.data.settings.toDisplayArea
 import com.act.geomapper.data.settings.toDisplayDistance
 import com.act.geomapper.domain.models.Predio
@@ -47,6 +48,8 @@ fun LayersBottomSheet(
     onToggleGeoPdfVisible  : () -> Unit                    = {},
     onZoomGeoPdf           : () -> Unit                    = {},
     onEliminarGeoPdf       : () -> Unit                    = {},
+    descargasOffline       : List<DescargaOffline>          = emptyList(),
+    onEliminarDescarga     : (Long) -> Unit                 = {},
     onDismiss              : () -> Unit
 ) {
     var confirmarEliminarTodos by remember { mutableStateOf(false) }
@@ -117,7 +120,7 @@ fun LayersBottomSheet(
             val poligonos = predios.filter { it.geometry.geometryType !in listOf("Point", "LineString") }
 
             val s = com.act.geomapper.ui.theme.LocalStrings.current
-            if (predios.isEmpty() && geoPdfData == null) {
+            if (predios.isEmpty() && geoPdfData == null && descargasOffline.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(s.sinEntidades, color = Color.White.copy(0.4f), fontSize = 13.sp)
                 }
@@ -127,19 +130,24 @@ fun LayersBottomSheet(
                 var poligonosExpandidos by remember { mutableStateOf(false) }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // ── Sección de capas raster (GeoPDF / TIFF) ──────────────
-                    if (geoPdfData != null) {
+                    // ── Sección de capas raster (GeoPDF / offline) ───────────
+                    if (geoPdfData != null || descargasOffline.isNotEmpty()) {
                         item {
                             SeccionHeader(
                                 icon      = Icons.Default.Map,
                                 titulo    = "Rásteres",
-                                count     = 1,
+                                count     = (if (geoPdfData != null) 1 else 0) + descargasOffline.size,
                                 color     = Color(0xFFCE93D8),
                                 expandido = true,
                                 onToggle  = {}
                             )
                         }
-                        item { RasterRow(geoPdfData, geoPdfVisible, onToggleGeoPdfVisible, onZoomGeoPdf, onEliminarGeoPdf) }
+                        if (geoPdfData != null) {
+                            item { RasterRow(geoPdfData, geoPdfVisible, onToggleGeoPdfVisible, onZoomGeoPdf, onEliminarGeoPdf) }
+                        }
+                        items(descargasOffline, key = { it.id }) { d ->
+                            RasterOfflineRow(d, onEliminarDescarga)
+                        }
                         item { Spacer(Modifier.height(4.dp)) }
                     }
                     if (puntos.isNotEmpty()) {
@@ -421,6 +429,59 @@ private fun EntidadRow(
                     TextButton(onClick = { confirmarBorrar = false }) { Text("Cancelar", fontSize = 11.sp) }
                     Button(
                         onClick = { onEliminar(predio.id); confirmarBorrar = false },
+                        colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) { Text("Eliminar", fontSize = 11.sp) }
+                }
+            }
+        }
+    }
+}
+
+// ── Fila de mapa offline descargado ──────────────────────────────────────────
+
+@Composable
+private fun RasterOfflineRow(
+    data       : DescargaOffline,
+    onEliminar : (Long) -> Unit
+) {
+    var confirmarBorrar by remember { mutableStateOf(false) }
+
+    GlassBox(shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.CloudDownload, null,
+                    tint     = Color(0xFFCE93D8),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(data.nombre, color = Color.White, fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(
+                        "N%.4f  S%.4f  E%.4f  O%.4f".format(
+                            data.norte, data.sur, data.este, data.oeste),
+                        color = Color.White.copy(0.4f), fontSize = 10.sp, maxLines = 1
+                    )
+                    Text("${data.tiles} tiles · z14–z${data.zoomMax}",
+                        color = Color.White.copy(0.4f), fontSize = 10.sp)
+                }
+                IconButton(onClick = { confirmarBorrar = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, null,
+                        tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
+                }
+            }
+            AnimatedVisibility(confirmarBorrar) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                ) {
+                    TextButton(onClick = { confirmarBorrar = false }) {
+                        Text("Cancelar", fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = { onEliminar(data.id); confirmarBorrar = false },
                         colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) { Text("Eliminar", fontSize = 11.sp) }

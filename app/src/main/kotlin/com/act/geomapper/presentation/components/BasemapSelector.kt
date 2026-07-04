@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -64,10 +65,11 @@ private fun googleTile(lyrs: String): XYTileSource {
  */
 @Composable
 fun BasemapPanel(
-    seleccionado : Basemap,
-    onSeleccionar: (Basemap) -> Unit,
-    onDismiss    : () -> Unit,
-    modifier     : Modifier = Modifier
+    seleccionado   : Basemap,
+    onSeleccionar  : (Basemap) -> Unit,
+    onDismiss      : () -> Unit,
+    onDescargarArea: () -> Unit = {},
+    modifier       : Modifier = Modifier
 ) {
     val opciones = listOf(Basemap.OSM, Basemap.GoogleSat, Basemap.GoogleHyb, Basemap.GoogleStr)
 
@@ -103,6 +105,16 @@ fun BasemapPanel(
                         }
                     }
                 }
+            }
+            HorizontalDivider(color = Color.White.copy(0.15f))
+            TextButton(
+                onClick  = { onDescargarArea(); onDismiss() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.CloudDownload, null,
+                    tint = Color(0xFF81C784), modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Descargar área visible", color = Color(0xFF81C784), fontSize = 11.sp)
             }
         }
     }
