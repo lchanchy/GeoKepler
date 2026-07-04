@@ -40,6 +40,13 @@ fun Basemap.toTileSource(): OnlineTileSourceBase = when (this) {
     Basemap.GoogleStr -> googleTile("m")
 }
 
+fun basemapDesdeEtiqueta(etiqueta: String): Basemap = when (etiqueta) {
+    Basemap.GoogleSat.etiqueta -> Basemap.GoogleSat
+    Basemap.GoogleHyb.etiqueta -> Basemap.GoogleHyb
+    Basemap.GoogleStr.etiqueta -> Basemap.GoogleStr
+    else                       -> Basemap.OSM
+}
+
 private fun googleTile(lyrs: String): XYTileSource {
     // Capturamos las URLs en una val local; no accedemos a mBaseUrl (campo interno de osmdroid)
     val hosts = arrayOf(
@@ -114,7 +121,7 @@ fun BasemapPanel(
                 Icon(Icons.Default.CloudDownload, null,
                     tint = Color(0xFF81C784), modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Descargar área visible", color = Color(0xFF81C784), fontSize = 11.sp)
+                Text("Definir área de descarga…", color = Color(0xFF81C784), fontSize = 11.sp)
             }
         }
     }

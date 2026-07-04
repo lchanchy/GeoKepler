@@ -40,7 +40,11 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver") }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0A0A0A))
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor        = Color(0xFF0A0A0A),
+                    titleContentColor     = Color.White,
+                    navigationIconContentColor = Color.White
+                )
             )
         },
         containerColor = Color(0xFF0A0A0A)

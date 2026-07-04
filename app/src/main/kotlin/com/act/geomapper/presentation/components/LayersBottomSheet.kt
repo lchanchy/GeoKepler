@@ -48,8 +48,10 @@ fun LayersBottomSheet(
     onToggleGeoPdfVisible  : () -> Unit                    = {},
     onZoomGeoPdf           : () -> Unit                    = {},
     onEliminarGeoPdf       : () -> Unit                    = {},
-    descargasOffline       : List<DescargaOffline>          = emptyList(),
-    onEliminarDescarga     : (Long) -> Unit                 = {},
+    descargasOffline           : List<DescargaOffline>      = emptyList(),
+    onEliminarDescarga         : (Long) -> Unit             = {},
+    onToggleDescargaVisible    : (Long) -> Unit             = {},
+    onZoomDescarga             : (Long) -> Unit             = {},
     onDismiss              : () -> Unit
 ) {
     var confirmarEliminarTodos by remember { mutableStateOf(false) }
@@ -146,7 +148,12 @@ fun LayersBottomSheet(
                             item { RasterRow(geoPdfData, geoPdfVisible, onToggleGeoPdfVisible, onZoomGeoPdf, onEliminarGeoPdf) }
                         }
                         items(descargasOffline, key = { it.id }) { d ->
-                            RasterOfflineRow(d, onEliminarDescarga)
+                            RasterOfflineRow(
+                                data              = d,
+                                onEliminar        = onEliminarDescarga,
+                                onToggleVisible   = { onToggleDescargaVisible(d.id) },
+                                onZoom            = { onZoomDescarga(d.id); onDismiss() }
+                            )
                         }
                         item { Spacer(Modifier.height(4.dp)) }
                     }
@@ -442,23 +449,27 @@ private fun EntidadRow(
 
 @Composable
 private fun RasterOfflineRow(
-    data       : DescargaOffline,
-    onEliminar : (Long) -> Unit
+    data            : DescargaOffline,
+    onEliminar      : (Long) -> Unit,
+    onToggleVisible : () -> Unit = {},
+    onZoom          : () -> Unit = {}
 ) {
     var confirmarBorrar by remember { mutableStateOf(false) }
+    val visible = data.visible
 
     GlassBox(shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Default.CloudDownload, null,
-                    tint     = Color(0xFFCE93D8),
+                    tint     = if (visible) Color(0xFFCE93D8) else Color(0xFFCE93D8).copy(0.35f),
                     modifier = Modifier.size(14.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(data.nombre, color = Color.White, fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(data.nombre,
+                        color = if (visible) Color.White else Color.White.copy(0.35f),
+                        fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                     Text(
                         "N%.4f  S%.4f  E%.4f  O%.4f".format(
                             data.norte, data.sur, data.este, data.oeste),
@@ -467,6 +478,21 @@ private fun RasterOfflineRow(
                     Text("${data.tiles} tiles · z14–z${data.zoomMax}",
                         color = Color.White.copy(0.4f), fontSize = 10.sp)
                 }
+                // 🔍 Zoom al extent
+                IconButton(onClick = onZoom, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.ZoomIn, null,
+                        tint = Color(0xFF90CAF9), modifier = Modifier.size(16.dp))
+                }
+                // 👁 Visibilidad
+                IconButton(onClick = onToggleVisible, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        null,
+                        tint     = if (visible) Color(0xFF81C784) else Color.White.copy(0.3f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                // 🗑 Eliminar
                 IconButton(onClick = { confirmarBorrar = true }, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Delete, null,
                         tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))

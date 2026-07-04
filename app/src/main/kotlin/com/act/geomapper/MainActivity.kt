@@ -385,7 +385,7 @@ private fun MapaApp(
     var proyectoParaExportar     by remember { mutableStateOf<com.act.geomapper.domain.models.Proyecto?>(null) }
     var mostrarImport    by remember { mutableStateOf(false) }
     var mostrarBasemap   by remember { mutableStateOf(false) }
-    var mostrarDescargaMapa by remember { mutableStateOf(false) }
+    var dibujandoAreaDescarga by remember { mutableStateOf(false) }
 
     val appPrefs = remember { context.getSharedPreferences("app_state", android.content.Context.MODE_PRIVATE) }
     var descargasOffline by remember { mutableStateOf(com.act.geomapper.data.offline.cargarDescargasOffline(appPrefs)) }
@@ -457,8 +457,9 @@ private fun MapaApp(
             btConectado      = estadoBt is com.act.geomapper.data.gnss.BtGnssEstado.Conectado,
             wifiConectado    = estadoWifiGnss is com.act.geomapper.data.gnss.WifiGnssEstado.Conectado,
             onGuardarEdicion         = { id, geom -> predioVM.actualizarGeometria(id, geom) },
-            descargaMapaActiva       = mostrarDescargaMapa,
-            onDescargaActivaConsumed = { mostrarDescargaMapa = false },
+            descargasOffline         = descargasOffline,
+            dibujandoAreaDescarga    = dibujandoAreaDescarga,
+            onCancelarAreaDescarga   = { dibujandoAreaDescarga = false },
             onDescargaCompletada     = { d ->
                 val nuevas = descargasOffline + d
                 descargasOffline = nuevas
@@ -518,7 +519,7 @@ private fun MapaApp(
                 seleccionado   = basemapActual,
                 onSeleccionar  = { onBasemapChange(it) },
                 onDismiss      = { mostrarBasemap = false },
-                onDescargarArea = { mostrarBasemap = false; mostrarDescargaMapa = true },
+                onDescargarArea = { mostrarBasemap = false; dibujandoAreaDescarga = true },
                 modifier       = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 128.dp, end = 8.dp)
             )
         }
@@ -647,11 +648,22 @@ private fun MapaApp(
                 mostrarCapas = false
             },
             onEliminarGeoPdf      = { importVM.cerrarGeoPdf() },
-            descargasOffline      = descargasOffline,
-            onEliminarDescarga    = { id ->
+            descargasOffline           = descargasOffline,
+            onEliminarDescarga         = { id ->
                 val nuevas = descargasOffline.filter { it.id != id }
                 descargasOffline = nuevas
                 com.act.geomapper.data.offline.guardarDescargasOffline(appPrefs, nuevas)
+            },
+            onToggleDescargaVisible    = { id ->
+                val nuevas = descargasOffline.map { if (it.id == id) it.copy(visible = !it.visible) else it }
+                descargasOffline = nuevas
+                com.act.geomapper.data.offline.guardarDescargasOffline(appPrefs, nuevas)
+            },
+            onZoomDescarga             = { id ->
+                descargasOffline.firstOrNull { it.id == id }?.let { d ->
+                    mapVM.centrarEnCoordenada((d.norte + d.sur) / 2, (d.este + d.oeste) / 2)
+                }
+                mostrarCapas = false
             },
             onDismiss             = { mostrarCapas = false }
         )

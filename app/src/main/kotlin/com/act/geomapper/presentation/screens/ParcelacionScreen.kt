@@ -270,15 +270,15 @@ fun ParcelacionScreen(
                 .padding(top = 70.dp, end = 10.dp)
         )
 
-        // ── Toggles de etiquetas — sutiles, bajo la brújula ──────────────
+        // ── Toggles de etiquetas — lado izquierdo, al mismo nivel que el indicador norte ──
         AnimatedVisibility(
             visible  = state.predioBase != null,
             enter    = fadeIn(),
             exit     = fadeOut(),
             modifier = Modifier
-                .align(Alignment.TopEnd)
+                .align(Alignment.TopStart)
                 .statusBarsPadding()
-                .padding(top = 120.dp, end = 10.dp)
+                .padding(top = 70.dp, start = 12.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 EtiquetaToggle(

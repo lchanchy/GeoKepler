@@ -58,6 +58,7 @@ import com.act.geomapper.ui.theme.rememberWindowInfo
 import android.media.AudioManager
 import android.media.ToneGenerator
 import androidx.compose.foundation.layout.navigationBarsPadding
+import kotlinx.coroutines.launch
 
 @Composable
 fun MapScreen(
@@ -73,8 +74,9 @@ fun MapScreen(
     btConectado     : Boolean                     = false,
     wifiConectado   : Boolean                     = false,
     onGuardarEdicion        : (Long, org.locationtech.jts.geom.Geometry) -> Unit = { _, _ -> },
-    descargaMapaActiva      : Boolean                                            = false,
-    onDescargaActivaConsumed: () -> Unit                                         = {},
+    descargasOffline        : List<com.act.geomapper.data.offline.DescargaOffline> = emptyList(),
+    dibujandoAreaDescarga   : Boolean                                            = false,
+    onCancelarAreaDescarga  : () -> Unit                                         = {},
     onDescargaCompletada    : (com.act.geomapper.data.offline.DescargaOffline) -> Unit = {},
     modifier                : Modifier                                           = Modifier
 ) {
@@ -83,9 +85,22 @@ fun MapScreen(
     val azimut  = rememberAzimut()
     val win     = rememberWindowInfo()
 
-    var progresoDescarga by remember { mutableStateOf(-1) }
-    var descargaBbox     by remember { mutableStateOf<org.osmdroid.util.BoundingBox?>(null) }
+    var progresoDescarga      by remember { mutableStateOf(-1) }
+    var descargaBbox          by remember { mutableStateOf<org.osmdroid.util.BoundingBox?>(null) }
+    var mostrarDialogoDescarga by remember { mutableStateOf(false) }
     val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+    val scope       = rememberCoroutineScope()
+
+    // Rastrea los TilesOverlay de descargas offline para poder eliminarlos al actualizar
+    val offlineTileData = remember {
+        mutableListOf<Pair<org.osmdroid.tileprovider.MapTileProviderBase,
+                          org.osmdroid.views.overlay.TilesOverlay>>()
+    }
+
+    // Vértices del polígono que el usuario dibuja para definir el área de descarga
+    val verticesDescarga = remember { androidx.compose.runtime.snapshots.SnapshotStateList<GeoPoint>() }
+    // Ref mutable para leer el estado desde dentro del overlay (que se crea una sola vez)
+    val dibujandoRef = androidx.compose.runtime.rememberUpdatedState(dibujandoAreaDescarga)
 
     LaunchedEffect(Unit) {
         Configuration.getInstance().apply {
@@ -120,18 +135,59 @@ fun MapScreen(
             overlays.add(RotationGestureOverlay(this).also { it.isEnabled = true })
             overlays.add(object : org.osmdroid.views.overlay.Overlay() {
                 override fun onSingleTapConfirmed(e: MotionEvent, mv: MapView): Boolean {
-                    // Captura en el CENTRO del mapa (donde está la diana), no donde tocó el dedo
                     val centro = mv.mapCenter as GeoPoint
-                    viewModel.capturarPuntoManual(PuntoGps(centro.latitude, centro.longitude))
+                    if (dibujandoRef.value) {
+                        // Modo dibujo: agregar vértice al polígono de descarga
+                        verticesDescarga.add(centro)
+                    } else {
+                        // Modo normal: capturar entidad
+                        viewModel.capturarPuntoManual(PuntoGps(centro.latitude, centro.longitude))
+                    }
                     return true
                 }
             })
         }
     }
 
-    LaunchedEffect(descargaMapaActiva) {
-        if (descargaMapaActiva) descargaBbox = mapView.boundingBox
-        else progresoDescarga = -1
+    // Limpiar vértices y estado al salir del modo dibujo
+    LaunchedEffect(dibujandoAreaDescarga) {
+        if (!dibujandoAreaDescarga) {
+            verticesDescarga.clear()
+            mostrarDialogoDescarga = false
+            progresoDescarga       = -1
+            mapView.overlays.removeAll { it is Polyline && it.title == TAG_DESCARGA_BORRADOR }
+            mapView.overlays.removeAll { it is Marker  && it.id   == TAG_DESCARGA_BORRADOR }
+            mapView.invalidate()
+        }
+    }
+
+    // Dibujar polígono de área en progreso — igual que dibujarBorrador en modo POLIGONO
+    LaunchedEffect(verticesDescarga.size) {
+        mapView.overlays.removeAll { it is Polyline && it.title == TAG_DESCARGA_BORRADOR }
+        mapView.overlays.removeAll { it is Marker  && it.id   == TAG_DESCARGA_BORRADOR }
+        val pts = verticesDescarga.toList()
+        if (pts.size >= 2) {
+            Polyline(mapView).apply {
+                title                    = TAG_DESCARGA_BORRADOR
+                infoWindow               = null
+                setPoints(if (pts.size >= 3) pts + pts.first() else pts)
+                outlinePaint.color       = AColor.parseColor("#2E7D32")
+                outlinePaint.strokeWidth = 3f
+                outlinePaint.pathEffect  = android.graphics.DashPathEffect(floatArrayOf(12f, 6f), 0f)
+                mapView.overlays.add(this)
+            }
+        }
+        pts.forEach { gp ->
+            Marker(mapView).apply {
+                id         = TAG_DESCARGA_BORRADOR
+                position   = gp
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                icon       = crearPuntoDot(mapView.context)
+                infoWindow = null
+                mapView.overlays.add(this)
+            }
+        }
+        mapView.invalidate()
     }
 
     LaunchedEffect(basemapActual) {
@@ -142,6 +198,45 @@ fun MapScreen(
     LaunchedEffect(geoPdfData, geoPdfVisible) {
         mapView.overlays.removeAll { it is GeoPdfOverlay }
         if (geoPdfData != null && geoPdfVisible) mapView.overlays.add(0, GeoPdfOverlay(geoPdfData))
+        mapView.invalidate()
+    }
+
+    LaunchedEffect(descargasOffline) {
+        // Eliminar overlays de teselas anteriores
+        offlineTileData.forEach { (provider, overlay) ->
+            mapView.overlays.remove(overlay)
+            provider.detach()
+        }
+        offlineTileData.clear()
+        mapView.overlays.removeAll { it is Polyline && it.title?.startsWith("offline_bbox_") == true }
+
+        descargasOffline.filter { it.visible }.forEach { d ->
+            runCatching {
+                val tileSource = basemapDesdeEtiqueta(d.basemapEtiqueta).toTileSource()
+                val provider   = org.osmdroid.tileprovider.MapTileProviderBasic(context, tileSource)
+                val dBbox      = org.osmdroid.util.BoundingBox(d.norte, d.este, d.sur, d.oeste)
+                val tilesOverlay = BboxTilesOverlay(provider, context, dBbox)
+                mapView.overlays.add(0, tilesOverlay)
+                offlineTileData.add(provider to tilesOverlay)
+            }
+            runCatching {
+                Polyline(mapView).apply {
+                    title = "offline_bbox_${d.id}"
+                    infoWindow = null
+                    setPoints(listOf(
+                        GeoPoint(d.norte, d.oeste),
+                        GeoPoint(d.norte, d.este),
+                        GeoPoint(d.sur,   d.este),
+                        GeoPoint(d.sur,   d.oeste),
+                        GeoPoint(d.norte, d.oeste)
+                    ))
+                    outlinePaint.color       = AColor.argb(230, 255, 255, 255)
+                    outlinePaint.strokeWidth = 3f
+                    outlinePaint.pathEffect  = android.graphics.DashPathEffect(floatArrayOf(14f, 7f), 0f)
+                    mapView.overlays.add(this)
+                }
+            }
+        }
         mapView.invalidate()
     }
 
@@ -217,9 +312,15 @@ fun MapScreen(
         }
     }
 
-    // Overlay de navegación: línea recta GPS→destino, se actualiza con cada fix GPS
-    LaunchedEffect(uiState.estadoGps.puntoActual, uiState.navegacionDestino) {
-        dibujarNavegacion(mapView, uiState.estadoGps.puntoActual, uiState.navegacionDestino)
+    // Posición de alta precisión: GNSS externo RTK si conectado, GPS interno si no
+    val externalGnssOk = (btConectado || wifiConectado) && gnssFixMerged != null
+    val origenNavegacion = if (externalGnssOk && gnssFixMerged != null)
+        com.act.geomapper.domain.models.PuntoGps(gnssFixMerged.latitud, gnssFixMerged.longitud)
+    else uiState.estadoGps.puntoActual
+
+    // Overlay de navegación: línea recta posición→destino, usa RTK si disponible
+    LaunchedEffect(origenNavegacion, uiState.navegacionDestino) {
+        dibujarNavegacion(mapView, origenNavegacion, uiState.navegacionDestino)
     }
 
     // DirectionOverlay: punto azul con flecha de heading
@@ -228,9 +329,9 @@ fun MapScreen(
         if (!mapView.overlays.contains(dirOverlay))
             mapView.overlays.add(dirOverlay)
     }
-    // Actualizar posición y azimut en el overlay
-    LaunchedEffect(uiState.estadoGps.puntoActual, azimut) {
-        uiState.estadoGps.puntoActual?.let {
+    // Actualizar posición y azimut — usa posición RTK cuando está disponible
+    LaunchedEffect(origenNavegacion, azimut) {
+        origenNavegacion?.let {
             dirOverlay.geoPoint  = org.osmdroid.util.GeoPoint(it.latitud, it.longitud)
             dirOverlay.azimutDeg = azimut
             mapView.invalidate()
@@ -329,10 +430,8 @@ fun MapScreen(
         // ── Navegación / Replanteo ────────────────────────────────────────────
         uiState.navegacionDestino?.let { destino ->
 
-            // Posición activa: GNSS externo si conectado, si no GPS interno
-            val externalOk = (btConectado || wifiConectado) && gnssFixMerged != null
-            val posLat = if (externalOk) gnssFixMerged!!.latitud  else uiState.estadoGps.puntoActual?.latitud
-            val posLon = if (externalOk) gnssFixMerged!!.longitud else uiState.estadoGps.puntoActual?.longitud
+            val posLat = origenNavegacion?.latitud
+            val posLon = origenNavegacion?.longitud
 
             // Distancia y rumbo al destino
             val navResult = if (posLat != null && posLon != null) {
@@ -344,7 +443,7 @@ fun MapScreen(
             val rumboPunto  = navResult?.get(1) ?: 0f
 
             // Umbral de llegada: 3 cm con GNSS externo RTK, 3 m con GPS interno
-            val umbral  = if (externalOk) 0.03f else 3.0f
+            val umbral  = if (externalGnssOk) 0.03f else 3.0f
             val llegada = distMetros != null && distMetros < umbral
 
             // Sonido — una sola vez por transición false→true
@@ -447,9 +546,33 @@ fun MapScreen(
             ) { Text(err, fontSize = 13.sp) }
         }
 
+        // ── Panel de dibujo del área de descarga ─────────────────────────
+        if (dibujandoAreaDescarga && !mostrarDialogoDescarga) {
+            AreaDescargaPanel(
+                numVertices = verticesDescarga.size,
+                onDeshacer  = { if (verticesDescarga.isNotEmpty()) verticesDescarga.removeAt(verticesDescarga.lastIndex) },
+                onCancelar  = {
+                    verticesDescarga.clear()
+                    onCancelarAreaDescarga()
+                },
+                onConfirmar = {
+                    val pts = verticesDescarga.toList()
+                    descargaBbox = org.osmdroid.util.BoundingBox(
+                        pts.maxOf { it.latitude },  pts.maxOf { it.longitude },
+                        pts.minOf { it.latitude },  pts.minOf { it.longitude }
+                    )
+                    mostrarDialogoDescarga = true
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = win.coordBarBot + 48.dp, start = 16.dp, end = 16.dp)
+            )
+        }
+
         // ── Diálogo de descarga de mapa offline ──────────────────────────
         val bbox = descargaBbox
-        if (descargaMapaActiva && bbox != null) {
+        if (mostrarDialogoDescarga && bbox != null) {
             com.act.geomapper.presentation.components.DescargaMapaDialog(
                 bbox             = bbox,
                 basemapEtiqueta  = basemapActual.etiqueta,
@@ -457,44 +580,43 @@ fun MapScreen(
                 onDismiss = {
                     if (progresoDescarga !in 0..100) {
                         progresoDescarga = -1
-                        onDescargaActivaConsumed()
+                        mostrarDialogoDescarga = false
+                        onCancelarAreaDescarga()
                     }
                 },
-                onIniciarDescarga = { zoomMax ->
+                onIniciarDescarga = { zoomMaxArg ->
                     progresoDescarga = 0
-                    val totalRef = intArrayOf(0)
-                    val mgr = org.osmdroid.tileprovider.cachemanager.CacheManager(mapView)
-                    mgr.downloadAreaAsyncNoUI(
-                        context, bbox, 14, zoomMax,
-                        object : org.osmdroid.tileprovider.cachemanager.CacheManager.CacheManagerCallback {
-                            override fun updateProgress(progress: Int, currentZoomLevel: Int, zoomMin: Int, zoomMax2: Int) {
-                                val pct = if (totalRef[0] > 0) (progress * 100) / totalRef[0] else 0
-                                mainHandler.post { progresoDescarga = pct.coerceIn(0, 99) }
-                            }
-                            override fun downloadStarted() {}
-                            override fun setPossibleTilesInArea(total: Int) { totalRef[0] = total }
-                            override fun onTaskComplete() {
+                    val polygonPts = verticesDescarga.toList()
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        downloadTilesForPolygon(
+                            context    = context,
+                            tileSource = basemapActual.toTileSource(),
+                            polygonPts = polygonPts,
+                            bbox       = bbox,
+                            zoomMin    = 14,
+                            zoomMax    = zoomMaxArg,
+                            onProgress = { pct -> mainHandler.post { progresoDescarga = pct } },
+                            onComplete = { total ->
                                 mainHandler.post {
                                     progresoDescarga = 101
                                     onDescargaCompletada(
                                         com.act.geomapper.data.offline.DescargaOffline(
-                                            id      = System.currentTimeMillis(),
-                                            nombre  = "${basemapActual.etiqueta} z14–z$zoomMax",
-                                            norte   = bbox.latNorth,
-                                            sur     = bbox.latSouth,
-                                            este    = bbox.lonEast,
-                                            oeste   = bbox.lonWest,
-                                            zoomMax = zoomMax,
-                                            tiles   = totalRef[0]
+                                            id              = System.currentTimeMillis(),
+                                            nombre          = "${basemapActual.etiqueta} z14–z$zoomMaxArg",
+                                            norte           = bbox.latNorth,
+                                            sur             = bbox.latSouth,
+                                            este            = bbox.lonEast,
+                                            oeste           = bbox.lonWest,
+                                            zoomMax         = zoomMaxArg,
+                                            tiles           = total,
+                                            basemapEtiqueta = basemapActual.etiqueta
                                         )
                                     )
                                 }
-                            }
-                            override fun onTaskFailed(errors: Int) {
-                                mainHandler.post { progresoDescarga = -2 }
-                            }
-                        }
-                    )
+                            },
+                            onError = { mainHandler.post { progresoDescarga = -2 } }
+                        )
+                    }
                 }
             )
         }
@@ -531,11 +653,12 @@ private fun Crosshair(modifier: Modifier = Modifier) {
 
 // ── Overlays osmdroid ─────────────────────────────────────────────────────────
 
-private const val TAG_CAPTURA    = "captura"
-private const val TAG_BORRADOR   = "borrador"
-private const val TAG_GUARDADA   = "guardada"
-private const val TAG_AREA_LBL   = "guardada_a"
-private const val TAG_NAVEGACION = "navegacion"
+private const val TAG_CAPTURA          = "captura"
+private const val TAG_BORRADOR         = "borrador"
+private const val TAG_GUARDADA         = "guardada"
+private const val TAG_AREA_LBL         = "guardada_a"
+private const val TAG_NAVEGACION       = "navegacion"
+private const val TAG_DESCARGA_BORRADOR = "descarga_borrador"
 
 // P4: solo borra los overlays de BORRADOR, nunca las entidades guardadas
 private fun dibujarBorrador(mapView: MapView, state: MapUiState) {
@@ -980,5 +1103,183 @@ private fun AreaChip(texto: String, onDismiss: () -> Unit) {
                 Icon(Icons.Default.Close, null, tint = Color.White.copy(0.4f), modifier = Modifier.size(10.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun AreaDescargaPanel(
+    numVertices : Int,
+    onDeshacer  : () -> Unit,
+    onCancelar  : () -> Unit,
+    onConfirmar : () -> Unit,
+    modifier    : Modifier = Modifier
+) {
+    GlassBox(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), modifier = modifier) {
+        Column(
+            modifier            = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CloudDownload, null,
+                    tint = Color(0xFF81C784), modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Definir área de descarga",
+                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    modifier = Modifier.weight(1f))
+            }
+            Text(
+                if (numVertices < 3) "Toca el mapa para añadir vértices ($numVertices/3 mínimo)"
+                else "Polígono listo ($numVertices vértices) — confirma para continuar",
+                color = Color.White.copy(0.65f), fontSize = 11.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Deshacer último vértice
+                OutlinedButton(
+                    onClick = onDeshacer,
+                    enabled = numVertices > 0,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, if (numVertices > 0) Color.White.copy(0.4f) else Color.White.copy(0.15f))
+                ) {
+                    Icon(Icons.Default.Undo, null,
+                        tint = if (numVertices > 0) Color.White else Color.White.copy(0.3f),
+                        modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Deshacer", color = if (numVertices > 0) Color.White else Color.White.copy(0.3f),
+                        fontSize = 11.sp)
+                }
+                // Cancelar
+                OutlinedButton(
+                    onClick = onCancelar,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF5350).copy(0.6f))
+                ) {
+                    Text("Cancelar", color = Color(0xFFEF5350), fontSize = 11.sp)
+                }
+                // Confirmar
+                Button(
+                    onClick  = onConfirmar,
+                    enabled  = numVertices >= 3,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor         = Color(0xFF1565C0),
+                        disabledContainerColor = Color(0xFF1565C0).copy(0.3f)
+                    )
+                ) {
+                    Icon(Icons.Default.Check, null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Confirmar", fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+// ── Descarga de teselas filtrada por polígono ─────────────────────────────────
+
+private fun downloadTilesForPolygon(
+    context    : android.content.Context,
+    tileSource : org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase,
+    polygonPts : List<GeoPoint>,
+    bbox       : org.osmdroid.util.BoundingBox,
+    zoomMin    : Int,
+    zoomMax    : Int,
+    onProgress : (Int) -> Unit,
+    onComplete : (totalDownloaded: Int) -> Unit,
+    onError    : () -> Unit
+) {
+    if (polygonPts.size < 3) { onError(); return }
+    val tileCache = org.osmdroid.tileprovider.modules.SqlTileWriter()
+
+    val factory  = org.locationtech.jts.geom.GeometryFactory()
+    val ring     = (polygonPts + polygonPts.first())
+        .map { org.locationtech.jts.geom.Coordinate(it.longitude, it.latitude) }
+        .toTypedArray()
+    val prepared = org.locationtech.jts.geom.prep.PreparedGeometryFactory
+        .prepare(factory.createPolygon(ring))
+
+    val tiles = mutableListOf<Triple<Int, Int, Int>>()
+    for (z in zoomMin..zoomMax) {
+        val n    = 1 shl z
+        val xMin = lonToTileX(bbox.lonWest,  n)
+        val xMax = lonToTileX(bbox.lonEast,  n)
+        val yMin = latToTileY(bbox.latNorth, n)
+        val yMax = latToTileY(bbox.latSouth, n)
+        for (x in xMin..xMax) for (y in yMin..yMax) {
+            if (prepared.intersects(factory.toGeometry(tileToEnvelope(z, x, y))))
+                tiles.add(Triple(z, x, y))
+        }
+    }
+
+    val total = tiles.size
+    if (total == 0) { onComplete(0); return }
+
+    var done       = 0
+    var downloaded = 0
+    for ((z, x, y) in tiles) {
+        runCatching {
+            val idx  = org.osmdroid.util.MapTileIndex.getTileIndex(z, x, y)
+            val url  = tileSource.getTileURLString(idx)
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.setRequestProperty("User-Agent", context.packageName)
+            conn.connectTimeout = 15_000
+            conn.readTimeout    = 15_000
+            val bytes = conn.inputStream.use { it.readBytes() }
+            conn.disconnect()
+            tileCache.saveFile(
+                tileSource,
+                org.osmdroid.util.MapTileIndex.getTileIndex(z, x, y),
+                java.io.ByteArrayInputStream(bytes),
+                System.currentTimeMillis() + 30L * 24 * 3_600_000
+            )
+            downloaded++
+        }
+        done++
+        onProgress((done * 100) / total)
+    }
+    if (downloaded > 0) onComplete(downloaded) else onError()
+}
+
+private fun lonToTileX(lon: Double, n: Int) =
+    ((lon + 180.0) / 360.0 * n).toInt().coerceIn(0, n - 1)
+
+private fun latToTileY(lat: Double, n: Int): Int {
+    val r = Math.toRadians(lat.coerceIn(-85.0, 85.0))
+    return ((1.0 - Math.log(Math.tan(r) + 1.0 / Math.cos(r)) / Math.PI) / 2.0 * n)
+        .toInt().coerceIn(0, n - 1)
+}
+
+private fun tileToEnvelope(z: Int, x: Int, y: Int): org.locationtech.jts.geom.Envelope {
+    val n    = 1 shl z
+    val lonW = x.toDouble() / n * 360.0 - 180.0
+    val lonE = (x + 1).toDouble() / n * 360.0 - 180.0
+    val latN = Math.toDegrees(Math.atan(Math.sinh(Math.PI * (1 - 2.0 * y / n))))
+    val latS = Math.toDegrees(Math.atan(Math.sinh(Math.PI * (1 - 2.0 * (y + 1) / n))))
+    return org.locationtech.jts.geom.Envelope(lonW, lonE, latS, latN)
+}
+
+// Overlay de teselas recortado al bbox de la descarga — evita mostrar teselas fuera del área
+private class BboxTilesOverlay(
+    provider : org.osmdroid.tileprovider.MapTileProviderBase,
+    context  : android.content.Context,
+    private val bbox: org.osmdroid.util.BoundingBox
+) : org.osmdroid.views.overlay.TilesOverlay(provider, context) {
+    override fun draw(canvas: android.graphics.Canvas, osmv: MapView, shadow: Boolean) {
+        if (shadow) return
+        val proj = osmv.projection
+        val pNW  = proj.toPixels(GeoPoint(bbox.latNorth, bbox.lonWest), null)
+        val pSE  = proj.toPixels(GeoPoint(bbox.latSouth, bbox.lonEast), null)
+        canvas.save()
+        canvas.clipRect(
+            minOf(pNW.x, pSE.x).toFloat(),
+            minOf(pNW.y, pSE.y).toFloat(),
+            maxOf(pNW.x, pSE.x).toFloat(),
+            maxOf(pNW.y, pSE.y).toFloat()
+        )
+        super.draw(canvas, osmv, shadow)
+        canvas.restore()
     }
 }

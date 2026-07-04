@@ -45,7 +45,7 @@ fun DescargaMapaDialog(
                         tint = Color(0xFF81C784), modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Descargar área visible",
+                        "Descargar área definida",
                         color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
                         modifier = Modifier.weight(1f)
                     )
