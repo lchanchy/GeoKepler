@@ -526,7 +526,7 @@ private fun MapaApp(
 
         // ── FAB inferior derecho: abre opciones de captura ───────────────
         val win = com.act.geomapper.ui.theme.rememberWindowInfo()
-        if (mapState.modoCaptura == ModoCaptura.NINGUNO) {
+        if (mapState.modoCaptura == ModoCaptura.NINGUNO && !dibujandoAreaDescarga) {
             Column(
                 modifier              = Modifier
                     .align(Alignment.BottomEnd)

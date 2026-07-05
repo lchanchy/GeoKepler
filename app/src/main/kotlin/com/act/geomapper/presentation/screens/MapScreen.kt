@@ -171,7 +171,7 @@ fun MapScreen(
                 title                    = TAG_DESCARGA_BORRADOR
                 infoWindow               = null
                 setPoints(if (pts.size >= 3) pts + pts.first() else pts)
-                outlinePaint.color       = AColor.parseColor("#2E7D32")
+                outlinePaint.color       = AColor.WHITE
                 outlinePaint.strokeWidth = 3f
                 outlinePaint.pathEffect  = android.graphics.DashPathEffect(floatArrayOf(12f, 6f), 0f)
                 mapView.overlays.add(this)
@@ -288,6 +288,12 @@ fun MapScreen(
                    settings.rellenoPoligonos, settings.areaUnit, settings.distanceUnit) {
         val pares = predios.filter { it.id !in ocultos }.map { p -> p to wktWriter.write(p.geometry) }
         dibujarEntidadesGuardadas(mapView, pares, settings.rellenoPoligonos, settings.areaUnit, settings.distanceUnit)
+        // Las entidades usan add(0,...) y empujan el TilesOverlay a índices altos (encima).
+        // Lo reposicionamos al fondo (índice 0) para que quede debajo de las entidades.
+        mapView.overlays.filterIsInstance<org.osmdroid.views.overlay.TilesOverlay>().forEach { to ->
+            mapView.overlays.remove(to)
+            mapView.overlays.add(0, to)
+        }
     }
 
     // ── Overlay de edición de vértices ───────────────────────────────────────
@@ -1067,7 +1073,7 @@ private fun dibujarNavegacion(mapView: MapView, origen: com.act.geomapper.domain
         outlinePaint.color       = AColor.parseColor("#2196F3")
         outlinePaint.strokeWidth = 5f
         outlinePaint.pathEffect  = android.graphics.DashPathEffect(floatArrayOf(24f, 12f), 0f)
-        mapView.overlays.add(0, this)   // detrás de todo lo demás
+        mapView.overlays.add(this)
     }
     mapView.invalidate()
 }
@@ -1082,8 +1088,8 @@ private fun NavegacionChip(distancia: String, onDetener: () -> Unit, modifier: M
         ) {
             Icon(Icons.Default.Navigation, null, tint = Color(0xFF2196F3), modifier = Modifier.size(14.dp))
             Text(distancia, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            IconButton(onClick = onDetener, modifier = Modifier.size(18.dp)) {
-                Icon(Icons.Default.Close, null, tint = Color.White.copy(0.4f), modifier = Modifier.size(10.dp))
+            IconButton(onClick = onDetener, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Close, null, tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
             }
         }
     }

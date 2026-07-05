@@ -130,6 +130,7 @@ fun LayersBottomSheet(
                 var puntosExpandidos    by remember { mutableStateOf(false) }
                 var lineasExpandidas    by remember { mutableStateOf(false) }
                 var poligonosExpandidos by remember { mutableStateOf(false) }
+                var rasteresExpandidos  by remember { mutableStateOf(false) }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // ── Sección de capas raster (GeoPDF / offline) ───────────
@@ -140,22 +141,24 @@ fun LayersBottomSheet(
                                 titulo    = "Rásteres",
                                 count     = (if (geoPdfData != null) 1 else 0) + descargasOffline.size,
                                 color     = Color(0xFFCE93D8),
-                                expandido = true,
-                                onToggle  = {}
+                                expandido = rasteresExpandidos,
+                                onToggle  = { rasteresExpandidos = !rasteresExpandidos }
                             )
                         }
-                        if (geoPdfData != null) {
-                            item { RasterRow(geoPdfData, geoPdfVisible, onToggleGeoPdfVisible, onZoomGeoPdf, onEliminarGeoPdf) }
+                        if (rasteresExpandidos) {
+                            if (geoPdfData != null) {
+                                item { RasterRow(geoPdfData, geoPdfVisible, onToggleGeoPdfVisible, onZoomGeoPdf, onEliminarGeoPdf) }
+                            }
+                            items(descargasOffline, key = { it.id }) { d ->
+                                RasterOfflineRow(
+                                    data              = d,
+                                    onEliminar        = onEliminarDescarga,
+                                    onToggleVisible   = { onToggleDescargaVisible(d.id) },
+                                    onZoom            = { onZoomDescarga(d.id); onDismiss() }
+                                )
+                            }
+                            item { Spacer(Modifier.height(4.dp)) }
                         }
-                        items(descargasOffline, key = { it.id }) { d ->
-                            RasterOfflineRow(
-                                data              = d,
-                                onEliminar        = onEliminarDescarga,
-                                onToggleVisible   = { onToggleDescargaVisible(d.id) },
-                                onZoom            = { onZoomDescarga(d.id); onDismiss() }
-                            )
-                        }
-                        item { Spacer(Modifier.height(4.dp)) }
                     }
                     if (puntos.isNotEmpty()) {
                         item {
