@@ -177,9 +177,9 @@ fun HeaderCard(
                             .data(Uri.parse("file:///android_asset/geokepler_wordmark.png"))
                             .build(),
                         contentDescription = "GeoKepler",
-                        contentScale       = ContentScale.FillHeight,
+                        contentScale       = ContentScale.Fit,
                         alignment          = Alignment.CenterStart,
-                        modifier           = Modifier.height(22.dp).fillMaxWidth()
+                        modifier           = Modifier.heightIn(max = 22.dp).fillMaxWidth()
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Surface(shape = CircleShape, color = colorGps.copy(alpha = dotAlpha), modifier = Modifier.size(7.dp)) {}

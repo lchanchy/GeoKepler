@@ -85,8 +85,8 @@ fun SplashScreen(onFinished: () -> Unit) {
                 Image(
                     bitmap             = wordmarkBitmap.asImageBitmap(),
                     contentDescription = "GeoKepler",
-                    contentScale       = ContentScale.FillHeight,
-                    modifier           = Modifier.height(40.dp)
+                    contentScale       = ContentScale.Fit,
+                    modifier           = Modifier.heightIn(max = 40.dp).fillMaxWidth(0.8f)
                 )
             } else {
                 Text("GeoKepler", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = 2.sp)
