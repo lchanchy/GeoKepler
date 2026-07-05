@@ -172,20 +172,14 @@ fun HeaderCard(
                         .rotate(logoRotate)
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    var tituloFontSize by remember { mutableStateOf(18.sp) }
-                    Text(
-                        "GeoKepler",
-                        color         = contentColor,
-                        fontWeight    = FontWeight.ExtraBold,
-                        fontSize      = tituloFontSize,
-                        maxLines      = 1,
-                        softWrap      = false,
-                        overflow      = TextOverflow.Clip,
-                        onTextLayout  = { resultado ->
-                            if (resultado.hasVisualOverflow && tituloFontSize > 12.sp) {
-                                tituloFontSize = (tituloFontSize.value - 1).sp
-                            }
-                        }
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(Uri.parse("file:///android_asset/geokepler_wordmark.png"))
+                            .build(),
+                        contentDescription = "GeoKepler",
+                        contentScale       = ContentScale.FillHeight,
+                        alignment          = Alignment.CenterStart,
+                        modifier           = Modifier.height(22.dp).fillMaxWidth()
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Surface(shape = CircleShape, color = colorGps.copy(alpha = dotAlpha), modifier = Modifier.size(7.dp)) {}

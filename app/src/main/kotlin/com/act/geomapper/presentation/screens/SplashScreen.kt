@@ -34,6 +34,11 @@ fun SplashScreen(onFinished: () -> Unit) {
             context.assets.open("GeoKepler.png").use { BitmapFactory.decodeStream(it) }
         }.getOrNull()
     }
+    val wordmarkBitmap = remember {
+        runCatching {
+            context.assets.open("geokepler_wordmark.png").use { BitmapFactory.decodeStream(it) }
+        }.getOrNull()
+    }
 
     var started by remember { mutableStateOf(false) }
     val alphaAnim  by animateFloatAsState(if (started) 1f else 0f,  tween(800, easing = FastOutSlowInEasing), label = "a")
@@ -76,7 +81,16 @@ fun SplashScreen(onFinished: () -> Unit) {
 
             Spacer(Modifier.height(8.dp))
 
-            Text("GeoKepler",             fontSize = 36.sp, fontWeight = FontWeight.Bold,   color = Color.White, letterSpacing = 2.sp)
+            if (wordmarkBitmap != null) {
+                Image(
+                    bitmap             = wordmarkBitmap.asImageBitmap(),
+                    contentDescription = "GeoKepler",
+                    contentScale       = ContentScale.FillHeight,
+                    modifier           = Modifier.height(40.dp)
+                )
+            } else {
+                Text("GeoKepler", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = 2.sp)
+            }
             Text("Cartografía de campo", fontSize = 13.sp, color = Color(0xFF81C784), textAlign = TextAlign.Center, letterSpacing = 1.sp)
         }
 
