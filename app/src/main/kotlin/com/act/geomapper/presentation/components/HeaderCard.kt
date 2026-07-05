@@ -172,18 +172,24 @@ fun HeaderCard(
                         .rotate(logoRotate)
                 )
                 Column(modifier = Modifier.weight(1f)) {
+                    var tituloFontSize by remember { mutableStateOf(18.sp) }
                     Text(
                         "GeoKepler",
                         color         = contentColor,
                         fontWeight    = FontWeight.ExtraBold,
-                        fontSize      = 18.sp,
-                        letterSpacing = 1.sp,
+                        fontSize      = tituloFontSize,
                         maxLines      = 1,
-                        overflow      = TextOverflow.Ellipsis
+                        softWrap      = false,
+                        overflow      = TextOverflow.Clip,
+                        onTextLayout  = { resultado ->
+                            if (resultado.hasVisualOverflow && tituloFontSize > 12.sp) {
+                                tituloFontSize = (tituloFontSize.value - 1).sp
+                            }
+                        }
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Surface(shape = CircleShape, color = colorGps.copy(alpha = dotAlpha), modifier = Modifier.size(7.dp)) {}
-                        Text("Activo", color = colorGps, fontWeight = FontWeight.Bold, fontSize = 11.sp,
+                        Text(strings.campoActivo, color = colorGps, fontWeight = FontWeight.Bold, fontSize = 11.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -250,7 +256,7 @@ fun HeaderCard(
                 }
 
                 IconButton(onClick = onConfig, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.MoreVert, "Menú", tint = contentColor, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.MoreVert, strings.menuLabel, tint = contentColor, modifier = Modifier.size(18.dp))
                 }
             }
 
@@ -321,6 +327,7 @@ private fun GnssDialog(
     onDismiss            : () -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     Dialog(onDismissRequest = onDismiss) {
         GlassBox(shape = RoundedCornerShape(20.dp)) {
@@ -330,7 +337,7 @@ private fun GnssDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.SatelliteAlt, null, tint = Color(0xFF42A5F5), modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("GNSS Externo", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(s.gnssExterno, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Default.Close, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(16.dp))
@@ -372,11 +379,12 @@ private fun BtTab(
     onCompartirGrabacion: () -> Unit,
     onDismiss           : () -> Unit
 ) {
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
     val (colorEstado, textoEstado) = when (estado) {
-        is BtGnssEstado.Conectado -> Color(0xFF4CAF50) to "Conectado: ${estado.nombre}"
-        BtGnssEstado.Conectando   -> Color(0xFF42A5F5) to "Conectando…"
-        is BtGnssEstado.Error     -> Color(0xFFEF5350) to "Error: ${estado.mensaje}"
-        BtGnssEstado.Desconectado -> Color(0xFF78909C) to "Desconectado"
+        is BtGnssEstado.Conectado -> Color(0xFF4CAF50) to s.conectadoA.format(estado.nombre)
+        BtGnssEstado.Conectando   -> Color(0xFF42A5F5) to s.conectando
+        is BtGnssEstado.Error     -> Color(0xFFEF5350) to s.errorConDetalle.format(estado.mensaje)
+        BtGnssEstado.Desconectado -> Color(0xFF78909C) to s.desconectado
     }
 
     GlassBox(shape = RoundedCornerShape(10.dp)) {
@@ -398,7 +406,7 @@ private fun BtTab(
             ) {
                 Icon(Icons.Default.BluetoothDisabled, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Desconectar")
+                Text(s.desconectar)
             }
 
             Spacer(Modifier.height(10.dp))
@@ -410,11 +418,11 @@ private fun BtTab(
         else -> {
             if (dispositivos.isEmpty()) {
                 Text(
-                    "No hay receptores emparejados.\nVe a Ajustes → Bluetooth y empareja el receptor primero.",
+                    s.sinReceptoresBt,
                     color = Color.White.copy(0.7f), fontSize = 12.sp
                 )
             } else {
-                Text("Selecciona el receptor:", color = Color.White.copy(0.7f), fontSize = 12.sp)
+                Text(s.seleccionaReceptor, color = Color.White.copy(0.7f), fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.heightIn(max = 200.dp)) {
@@ -429,7 +437,7 @@ private fun BtTab(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Icon(Icons.Default.Bluetooth, null, tint = Color(0xFF42A5F5), modifier = Modifier.size(18.dp))
                                 Column {
-                                    Text(device.name ?: "Dispositivo", color = Color.White,
+                                    Text(device.name ?: s.dispositivoGenerico, color = Color.White,
                                         fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                     Text(device.address, color = Color.White.copy(0.5f), fontSize = 10.sp)
                                 }
@@ -443,7 +451,7 @@ private fun BtTab(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF42A5F5))) {
                 Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Actualizar lista")
+                Text(s.actualizarLista)
             }
         }
     }
@@ -465,12 +473,13 @@ private fun WifiTab(
     val prefs  = remember { ctx.getSharedPreferences("gnss_wifi", android.content.Context.MODE_PRIVATE) }
     var ip     by remember { mutableStateOf(prefs.getString("ip", "") ?: "") }
     var puerto by remember { mutableStateOf(prefs.getString("puerto", "") ?: "") }
+    val s      = com.act.geomapper.ui.theme.LocalStrings.current
 
     val (colorEstado, textoEstado) = when (estado) {
-        is WifiGnssEstado.Conectado  -> Color(0xFF4CAF50) to "Conectado: ${estado.host}:${estado.puerto}"
-        WifiGnssEstado.Conectando    -> Color(0xFF42A5F5) to "Conectando…"
-        is WifiGnssEstado.Error      -> Color(0xFFEF5350) to "Error: ${estado.mensaje}"
-        WifiGnssEstado.Desconectado  -> Color(0xFF78909C) to "Desconectado"
+        is WifiGnssEstado.Conectado  -> Color(0xFF4CAF50) to s.conectadoA.format("${estado.host}:${estado.puerto}")
+        WifiGnssEstado.Conectando    -> Color(0xFF42A5F5) to s.conectando
+        is WifiGnssEstado.Error      -> Color(0xFFEF5350) to s.errorConDetalle.format(estado.mensaje)
+        WifiGnssEstado.Desconectado  -> Color(0xFF78909C) to s.desconectado
     }
 
     GlassBox(shape = RoundedCornerShape(10.dp)) {
@@ -493,7 +502,7 @@ private fun WifiTab(
             ) {
                 Icon(Icons.Default.WifiOff, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Desconectar")
+                Text(s.desconectar)
             }
             Spacer(Modifier.height(10.dp))
             HorizontalDivider(color = Color.White.copy(0.15f))
@@ -508,7 +517,7 @@ private fun WifiTab(
             ) {
                 Icon(Icons.Default.WifiOff, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Limpiar error")
+                Text(s.limpiarError)
             }
         }
         else -> {
@@ -516,7 +525,7 @@ private fun WifiTab(
                 OutlinedTextField(
                     value         = ip,
                     onValueChange = { ip = it },
-                    label         = { Text("IP del receptor", fontSize = 11.sp) },
+                    label         = { Text(s.ipReceptor, fontSize = 11.sp) },
                     placeholder   = { Text("192.168.1.100", color = Color.White.copy(0.3f)) },
                     singleLine    = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -532,7 +541,7 @@ private fun WifiTab(
                 OutlinedTextField(
                     value         = puerto,
                     onValueChange = { puerto = it },
-                    label         = { Text("Puerto TCP", fontSize = 11.sp) },
+                    label         = { Text(s.puertoTcp, fontSize = 11.sp) },
                     placeholder   = { Text("ej. 9001", color = Color.White.copy(0.3f)) },
                     singleLine    = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -546,7 +555,7 @@ private fun WifiTab(
                     )
                 )
                 Text(
-                    "Conéctese al WiFi del receptor antes de conectar",
+                    s.conectarWifiPrimero,
                     color    = Color.White.copy(0.5f),
                     fontSize = 10.sp
                 )
@@ -566,7 +575,7 @@ private fun WifiTab(
             ) {
                 Icon(Icons.Default.Wifi, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Conectar")
+                Text(s.conectarBtn)
             }
         }
     }
@@ -580,6 +589,7 @@ private fun LoggerControles(
     onDetener  : () -> Unit,
     onCompartir: () -> Unit
 ) {
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
     when (estado) {
         is LoggerEstado.Grabando -> {
             val inf      = rememberInfiniteTransition(label = "recDot")
@@ -609,7 +619,7 @@ private fun LoggerControles(
             ) {
                 Icon(Icons.Default.Stop, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Detener grabación")
+                Text(s.detenerGrabacion)
             }
         }
         LoggerEstado.Detenido -> {
@@ -620,7 +630,7 @@ private fun LoggerControles(
             ) {
                 Icon(Icons.Default.FiberManualRecord, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Grabar NMEA")
+                Text(s.grabarNmea)
             }
             // Botón compartir si hay un archivo grabado previamente
             if (ultimoArchivo != null && ultimoArchivo.exists() && ultimoArchivo.length() > 0) {
@@ -632,7 +642,7 @@ private fun LoggerControles(
                 ) {
                     Icon(Icons.Default.Share, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Compartir  ${ultimoArchivo.name}", fontSize = 11.sp,
+                    Text(s.compartirArchivoLbl.format(ultimoArchivo.name), fontSize = 11.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -666,13 +676,14 @@ private fun NtripTab(
     var user       by remember { mutableStateOf(prefs.getString("user",   "") ?: "") }
     var pass       by remember { mutableStateOf(prefs.getString("pass",   "") ?: "") }
     var mostrarPass by remember { mutableStateOf(false) }
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     val (colorChip, textoChip, subtextoHost) = when (estado) {
         is NtripEstado.Conectado ->
-            Triple(Color(0xFF1B5E20), "Conectado", "${estado.host}/${estado.mountpoint}")
-        NtripEstado.Conectando   -> Triple(Color(0xFF1565C0), "Conectando…", "")
-        is NtripEstado.Error     -> Triple(Color(0xFFB71C1C), "Error", estado.mensaje)
-        NtripEstado.Desconectado -> Triple(Color(0xFF263238), "Idle", "")
+            Triple(Color(0xFF1B5E20), s.conectadoLabel, "${estado.host}/${estado.mountpoint}")
+        NtripEstado.Conectando   -> Triple(Color(0xFF1565C0), s.conectando, "")
+        is NtripEstado.Error     -> Triple(Color(0xFFB71C1C), s.errorLabel, estado.mensaje)
+        NtripEstado.Desconectado -> Triple(Color(0xFF263238), s.idleLabel, "")
     }
 
     Column(
@@ -680,7 +691,7 @@ private fun NtripTab(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // ── Estado ────────────────────────────────────────────────────────
-        NtripSeccion("Estado") {
+        NtripSeccion(s.estadoLabel) {
             // Chip pill igual al reference
             Surface(
                 shape    = RoundedCornerShape(6.dp),
@@ -704,37 +715,37 @@ private fun NtripTab(
             }
             // Stats SIEMPRE visibles (0,00 cuando no conectado)
             Spacer(Modifier.height(10.dp))
-            NtripStatRow("VELOCIDAD", "%.2f KB/s".format(velocidadKbs))
+            NtripStatRow(s.velocidadLabel, "%.2f KB/s".format(velocidadKbs))
             Spacer(Modifier.height(4.dp))
-            NtripStatRow("RECIBIDOS", formatBytes(bytesRecibidos))
+            NtripStatRow(s.recibidosLabel, formatBytes(bytesRecibidos))
         }
 
         // ── Grabación ─────────────────────────────────────────────────────
-        NtripSeccion("Grabación") {
+        NtripSeccion(s.grabacionLabel) {
             val archivoActual = when (estadoLogger) {
                 is LoggerEstado.Grabando -> estadoLogger.archivo
-                LoggerEstado.Detenido   -> "Sin grabacion activa"
+                LoggerEstado.Detenido   -> s.sinGrabacionActiva
             }
             val rutaActual = ultimoArchivo?.absolutePath ?: carpeta
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                NtripInfoRow("ARCHIVO ACTUAL",   archivoActual)
-                NtripInfoRow("CARPETA ACTIVA",   carpeta)
-                NtripInfoRow("RUTA DE GUARDADO", rutaActual)
+                NtripInfoRow(s.archivoActualLbl, archivoActual)
+                NtripInfoRow(s.carpetaActivaLbl, carpeta)
+                NtripInfoRow(s.rutaGuardadoLbl,  rutaActual)
             }
         }
 
         // ── Configuración ─────────────────────────────────────────────────
-        NtripSeccion("Configuración") {
+        NtripSeccion(s.configuracionCompleta) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                GnssTextField(host,   { host   = it }, "IP / Host",   KeyboardType.Uri)
-                GnssTextField(puerto, { puerto = it }, "Puerto",      KeyboardType.Number)
-                GnssTextField(user,   { user   = it }, "Usuario",     KeyboardType.Text)
+                GnssTextField(host,   { host   = it }, s.ipHostLabel,  KeyboardType.Uri)
+                GnssTextField(puerto, { puerto = it }, s.puertoLabel,  KeyboardType.Number)
+                GnssTextField(user,   { user   = it }, s.usuarioLabel, KeyboardType.Text)
 
                 // Contraseña con ojo toggle
                 OutlinedTextField(
                     value               = pass,
                     onValueChange       = { pass = it },
-                    label               = { Text("Contraseña (${pass.length} caracteres)", fontSize = 11.sp) },
+                    label               = { Text(s.contrasenaLabel.format(pass.length), fontSize = 11.sp) },
                     singleLine          = true,
                     modifier            = Modifier.fillMaxWidth(),
                     keyboardOptions     = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -760,7 +771,7 @@ private fun NtripTab(
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
                 )
 
-                GnssTextField(mount,  { mount  = it }, "Mountpoint",  KeyboardType.Text)
+                GnssTextField(mount,  { mount  = it }, s.mountpointLabel,  KeyboardType.Text)
             }
         }
 
@@ -784,7 +795,7 @@ private fun NtripTab(
                 colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Conectar")
+                Text(s.conectarBtn)
             }
             Button(
                 onClick  = { onDesconectar(); onDismiss() },
@@ -792,7 +803,7 @@ private fun NtripTab(
                 colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Desconectar")
+                Text(s.desconectar)
             }
         }
     }

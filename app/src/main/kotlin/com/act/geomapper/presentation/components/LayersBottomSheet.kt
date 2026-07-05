@@ -55,21 +55,22 @@ fun LayersBottomSheet(
     onDismiss              : () -> Unit
 ) {
     var confirmarEliminarTodos by remember { mutableStateOf(false) }
+    val sTop = com.act.geomapper.ui.theme.LocalStrings.current
 
     if (confirmarEliminarTodos) {
         AlertDialog(
             onDismissRequest = { confirmarEliminarTodos = false },
             containerColor   = Color(0xFF1E1E1E),
-            title  = { Text("¿Eliminar todo?", color = Color.White, fontWeight = FontWeight.Bold) },
-            text   = { Text("Se eliminarán las ${predios.size} entidades. Esta acción no se puede deshacer.", color = Color.White.copy(0.7f)) },
+            title  = { Text(sTop.eliminarTodoTitulo, color = Color.White, fontWeight = FontWeight.Bold) },
+            text   = { Text(sTop.eliminarTodoConfirmacion.format(predios.size), color = Color.White.copy(0.7f)) },
             confirmButton = {
                 Button(
                     onClick = { onEliminarTodos(); confirmarEliminarTodos = false; onDismiss() },
                     colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C))
-                ) { Text("Eliminar todo") }
+                ) { Text(sTop.eliminarTodoBoton) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmarEliminarTodos = false }) { Text("Cancelar", color = Color.White.copy(0.6f)) }
+                TextButton(onClick = { confirmarEliminarTodos = false }) { Text(sTop.cancelar, color = Color.White.copy(0.6f)) }
             }
         )
     }
@@ -138,7 +139,7 @@ fun LayersBottomSheet(
                         item {
                             SeccionHeader(
                                 icon      = Icons.Default.Map,
-                                titulo    = "Rásteres",
+                                titulo    = s.rasteres,
                                 count     = (if (geoPdfData != null) 1 else 0) + descargasOffline.size,
                                 color     = Color(0xFFCE93D8),
                                 expandido = rasteresExpandidos,
@@ -271,6 +272,7 @@ private fun SeccionHeader(
     expandido: Boolean,
     onToggle : () -> Unit
 ) {
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,7 +289,7 @@ private fun SeccionHeader(
         )
         Icon(
             if (expandido) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = if (expandido) "Colapsar" else "Expandir",
+            contentDescription = if (expandido) s.colapsar else s.expandir,
             tint     = color.copy(0.7f),
             modifier = Modifier.size(16.dp)
         )
@@ -319,6 +321,7 @@ private fun EntidadRow(
     val wktWriter        = remember { WKTWriter() }
     val wkt              = remember(predio.id) { wktWriter.write(predio.geometry) }
     val fecha            = "#${predio.id}"
+    val s                = com.act.geomapper.ui.theme.LocalStrings.current
 
     GlassBox(shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -330,7 +333,7 @@ private fun EntidadRow(
                         OutlinedTextField(
                             value         = nuevoNombre,
                             onValueChange = { nuevoNombre = it },
-                            label         = { Text("Nombre", fontSize = 10.sp) },
+                            label         = { Text(s.nombreLabel, fontSize = 10.sp) },
                             singleLine    = true,
                             modifier      = Modifier.fillMaxWidth().height(52.dp),
                             colors        = OutlinedTextFieldDefaults.colors(
@@ -346,7 +349,7 @@ private fun EntidadRow(
                         OutlinedTextField(
                             value         = nuevoPropietario,
                             onValueChange = { nuevoPropietario = it },
-                            label         = { Text("Propietario", fontSize = 10.sp) },
+                            label         = { Text(s.propietarioLabel, fontSize = 10.sp) },
                             singleLine    = true,
                             modifier      = Modifier.fillMaxWidth().height(52.dp),
                             colors        = OutlinedTextFieldDefaults.colors(
@@ -370,7 +373,7 @@ private fun EntidadRow(
                     // Vista normal
                     Column(Modifier.weight(1f).clickable { onCentrarEn(wkt) }) {
                         Text(
-                            predio.nombre.ifBlank { "Sin nombre" },
+                            predio.nombre.ifBlank { s.sinNombre },
                             color      = if (visible) Color.White else Color.White.copy(0.35f),
                             fontSize   = 13.sp,
                             fontWeight = FontWeight.Medium
@@ -436,12 +439,12 @@ private fun EntidadRow(
                     Modifier.fillMaxWidth().padding(top = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
                 ) {
-                    TextButton(onClick = { confirmarBorrar = false }) { Text("Cancelar", fontSize = 11.sp) }
+                    TextButton(onClick = { confirmarBorrar = false }) { Text(s.cancelar, fontSize = 11.sp) }
                     Button(
                         onClick = { onEliminar(predio.id); confirmarBorrar = false },
                         colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) { Text("Eliminar", fontSize = 11.sp) }
+                    ) { Text(s.eliminar, fontSize = 11.sp) }
                 }
             }
         }
@@ -459,6 +462,7 @@ private fun RasterOfflineRow(
 ) {
     var confirmarBorrar by remember { mutableStateOf(false) }
     val visible = data.visible
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     GlassBox(shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -474,7 +478,7 @@ private fun RasterOfflineRow(
                         color = if (visible) Color.White else Color.White.copy(0.35f),
                         fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                     Text(
-                        "N%.4f  S%.4f  E%.4f  O%.4f".format(
+                        "${s.norte}%.4f  ${s.sur}%.4f  ${s.este}%.4f  ${s.oeste}%.4f".format(
                             data.norte, data.sur, data.este, data.oeste),
                         color = Color.White.copy(0.4f), fontSize = 10.sp, maxLines = 1
                     )
@@ -507,13 +511,13 @@ private fun RasterOfflineRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
                 ) {
                     TextButton(onClick = { confirmarBorrar = false }) {
-                        Text("Cancelar", fontSize = 11.sp)
+                        Text(s.cancelar, fontSize = 11.sp)
                     }
                     Button(
                         onClick = { onEliminar(data.id); confirmarBorrar = false },
                         colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) { Text("Eliminar", fontSize = 11.sp) }
+                    ) { Text(s.eliminar, fontSize = 11.sp) }
                 }
             }
         }
@@ -531,6 +535,7 @@ private fun RasterRow(
     onEliminar     : () -> Unit
 ) {
     var confirmarBorrar by remember { mutableStateOf(false) }
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     GlassBox(shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -550,7 +555,7 @@ private fun RasterRow(
                         fontWeight = FontWeight.Medium,
                         maxLines   = 1
                     )
-                    val bbox = "N%.5f S%.5f E%.5f O%.5f".format(
+                    val bbox = "${s.norte}%.5f ${s.sur}%.5f ${s.este}%.5f ${s.oeste}%.5f".format(
                         data.norte, data.sur, data.este, data.oeste
                     )
                     Text(bbox, color = Color.White.copy(0.4f), fontSize = 10.sp, maxLines = 1)
@@ -580,13 +585,13 @@ private fun RasterRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
                 ) {
                     TextButton(onClick = { confirmarBorrar = false }) {
-                        Text("Cancelar", fontSize = 11.sp)
+                        Text(s.cancelar, fontSize = 11.sp)
                     }
                     Button(
                         onClick = { onEliminar(); confirmarBorrar = false },
                         colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) { Text("Eliminar", fontSize = 11.sp) }
+                    ) { Text(s.eliminar, fontSize = 11.sp) }
                 }
             }
         }

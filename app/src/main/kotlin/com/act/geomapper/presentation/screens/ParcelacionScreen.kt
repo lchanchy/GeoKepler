@@ -256,7 +256,7 @@ fun ParcelacionScreen(
         // ── Header ────────────────────────────────────────────────────────
         ParcelacionHeader(
             titulo    = titulo,
-            subtitulo = state.predioBase?.nombre ?: "Sin polígono",
+            subtitulo = state.predioBase?.nombre ?: s.sinPoligono,
             onBack    = onBack,
             modifier  = Modifier.align(Alignment.TopCenter)
         )
@@ -284,13 +284,13 @@ fun ParcelacionScreen(
                 EtiquetaToggle(
                     activo  = mostrarEtiquetaArea,
                     icon    = Icons.Default.SquareFoot,
-                    titulo  = "Área",
+                    titulo  = s.areaToggle,
                     onClick = { mostrarEtiquetaArea = !mostrarEtiquetaArea }
                 )
                 EtiquetaToggle(
                     activo  = mostrarEtiquetaDist,
                     icon    = Icons.Default.Straighten,
-                    titulo  = "Lados",
+                    titulo  = s.ladosToggle,
                     onClick = { mostrarEtiquetaDist = !mostrarEtiquetaDist }
                 )
             }
@@ -351,7 +351,7 @@ fun ParcelacionScreen(
                     modifier       = Modifier.size(48.dp),
                     elevation      = FloatingActionButtonDefaults.elevation(4.dp)
                 ) {
-                    Icon(Icons.Default.Close, "Cancelar", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Close, s.cancelar, tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
                 // Botón undo — elimina el último punto trazado
@@ -363,7 +363,7 @@ fun ParcelacionScreen(
                     modifier       = Modifier.size(48.dp),
                     elevation      = FloatingActionButtonDefaults.elevation(4.dp)
                 ) {
-                    Icon(Icons.Default.Undo, "Deshacer punto",
+                    Icon(Icons.Default.Undo, s.deshacerPunto,
                         tint     = if (hayPuntos) Color.White else Color(0xFF607D8B),
                         modifier = Modifier.size(20.dp))
                 }
@@ -386,7 +386,7 @@ fun ParcelacionScreen(
                         modifier              = Modifier.padding(horizontal = 12.dp)
                     ) {
                         Icon(Icons.Default.AddLocation, null, tint = Color(0xFF90CAF9), modifier = Modifier.size(18.dp))
-                        Text("Añadir punto", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(s.anadirPunto, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -405,7 +405,7 @@ fun ParcelacionScreen(
                 shape          = RoundedCornerShape(12.dp),
                 modifier       = Modifier.size(52.dp)
             ) {
-                Icon(Icons.Default.Close, "Cancelar", tint = Color.White)
+                Icon(Icons.Default.Close, s.cancelar, tint = Color.White)
             }
         }
 
@@ -427,7 +427,7 @@ fun ParcelacionScreen(
                         verticalAlignment     = Alignment.CenterVertically
                     ) {
                         Text(
-                            "Cortar de nuevo:",
+                            s.cortarDeNuevo,
                             color    = Color(0xFF90CAF9),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
@@ -466,9 +466,9 @@ fun ParcelacionScreen(
                 onVia            = { vm.setAnchoVia(10.0); vm.iniciarVia() },
                 onSubdividir     = vm::iniciarSubdivision,
                 onToggleRelleno  = { conRelleno = !conRelleno },
-                onFinalizarCorte       = { vm.finalizarCorte(state.predioBase?.nombre ?: "Corte", proyectoId) },
-                onFinalizarVia         = { vm.finalizarVia(proyectoId, state.predioBase?.nombre ?: "Via") },
-                onFinalizarSubdivision = { vm.finalizarSubdivision(proyectoId, state.predioBase?.nombre ?: "Parcela") },
+                onFinalizarCorte       = { vm.finalizarCorte(state.predioBase?.nombre ?: s.corte, proyectoId) },
+                onFinalizarVia         = { vm.finalizarVia(proyectoId, state.predioBase?.nombre ?: s.via) },
+                onFinalizarSubdivision = { vm.finalizarSubdivision(proyectoId, state.predioBase?.nombre ?: s.parcelaDefault) },
                 puntosLinea            = state.puntosLinea.size,
                 modifier         = Modifier.align(Alignment.BottomCenter)
             )
@@ -478,7 +478,7 @@ fun ParcelacionScreen(
         state.error?.let { err ->
             Snackbar(
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 90.dp, start = 16.dp, end = 16.dp),
-                action   = { TextButton(onClick = vm::limpiarError) { Text("OK") } }
+                action   = { TextButton(onClick = vm::limpiarError) { Text(s.ok) } }
             ) { Text(err) }
             LaunchedEffect(err) { vm.limpiarError() }
         }
@@ -535,7 +535,7 @@ private fun ParcelacionHeader(
                 modifier       = Modifier.size(40.dp),
                 elevation      = FloatingActionButtonDefaults.elevation(2.dp, 2.dp)
             ) {
-                Icon(Icons.Default.ArrowBack, "Volver", tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.ArrowBack, LocalStrings.current.volver, tint = Color.White, modifier = Modifier.size(18.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(titulo,    color = Color(0xFF90CAF9), fontWeight = FontWeight.Bold,   fontSize = 16.sp)
@@ -572,6 +572,8 @@ private fun ToolsBottomBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment     = Alignment.CenterVertically
     ) {
+        val sb = LocalStrings.current
+
         // Botón capas circular gris
         FloatingActionButton(
             onClick        = onSelectorCapas,
@@ -580,12 +582,10 @@ private fun ToolsBottomBar(
             modifier       = Modifier.size(44.dp),
             elevation      = FloatingActionButtonDefaults.elevation(2.dp)
         ) {
-            Icon(Icons.Default.Layers, "Polígonos", tint = Color(0xFF0D2B4E), modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.Layers, sb.poligonos, tint = Color(0xFF0D2B4E), modifier = Modifier.size(20.dp))
         }
 
         Spacer(Modifier.width(2.dp))
-
-        val sb = LocalStrings.current
         when (modo) {
             ModoParcelacion.IDLE -> {
                 ToolBtn("✂", sb.corte,     CyanBtn,  tienePredioBase, onCorte,      Modifier.weight(1f))
@@ -720,7 +720,7 @@ private fun SubdivisionCompactCard(
                         onExpandedChange = { dropdownExpanded = it }
                     ) {
                         OutlinedTextField(
-                            value         = tipoSeleccionado?.label(sc) ?: "Tipo…",
+                            value         = tipoSeleccionado?.label(sc) ?: sc.tipoPlaceholder,
                             onValueChange = {},
                             readOnly      = true,
                             trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(dropdownExpanded) },
@@ -792,7 +792,7 @@ private fun SubdivisionCompactCard(
                             else {
                                 Icon(Icons.Default.Timeline, null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Trazar eje →", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(sc.trazarEje, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
                     }
@@ -822,6 +822,7 @@ private fun ConfirmationBar(
     onConfirmar : () -> Unit,
     onEditar    : () -> Unit
 ) {
+    val s = LocalStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -841,7 +842,7 @@ private fun ConfirmationBar(
         ) {
             Icon(Icons.Default.Undo, null, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Deshacer", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(s.deshacer, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
         }
         // Botón editar atributos de parcelas
         IconButton(
@@ -851,7 +852,7 @@ private fun ConfirmationBar(
                 .clip(CircleShape)
                 .background(Color(0xFF1A3A5C))
         ) {
-            Icon(Icons.Default.Edit, "Editar parcelas", tint = Color(0xFF90CAF9), modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.Edit, s.editarParcelas, tint = Color(0xFF90CAF9), modifier = Modifier.size(20.dp))
         }
         Button(
             onClick  = onConfirmar,
@@ -862,7 +863,7 @@ private fun ConfirmationBar(
         ) {
             Icon(Icons.Default.Check, null, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Guardar", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(s.guardar, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
         }
     }
 }
@@ -877,6 +878,7 @@ private fun ViaCompactCard(
     onSelectorPoly : () -> Unit
 ) {
     var expandido by remember { mutableStateOf(false) }
+    val s = LocalStrings.current
 
     GlassLightBox(shape = RoundedCornerShape(20.dp), elevation = 8.dp) {
         Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp).widthIn(max = 260.dp)) {
@@ -887,7 +889,7 @@ private fun ViaCompactCard(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(Icons.Default.SwapHoriz, null, tint = CyanBtn, modifier = Modifier.size(16.dp))
-                Text("Vía", color = Color(0xFF0D2B4E), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(s.via, color = Color(0xFF0D2B4E), fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
                 // Selector de polígono
                 IconButton(onClick = onSelectorPoly, modifier = Modifier.size(28.dp)) {
@@ -950,7 +952,7 @@ private fun ViaCompactCard(
                 shape          = RoundedCornerShape(12.dp),
                 colors         = ButtonDefaults.buttonColors(containerColor = CyanBtn),
                 contentPadding = PaddingValues(vertical = 8.dp)
-            ) { Text("Dibujar eje →", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+            ) { Text(s.dibujarEje, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
         }
     }
 }
@@ -964,12 +966,13 @@ private fun SelectorPoligonoDialog(
     onSeleccionar: (Predio) -> Unit,
     onDismiss    : () -> Unit
 ) {
+    val s = LocalStrings.current
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
         Column(Modifier.padding(16.dp).navigationBarsPadding()) {
-            Text("Seleccionar polígono", color = Color(0xFF0D2B4E), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(s.seleccionarPoligono, color = Color(0xFF0D2B4E), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(8.dp))
             if (poligonos.isEmpty()) {
-                Text("No hay polígonos en el proyecto activo.", color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+                Text(s.sinPoligonosProyecto, color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(poligonos, key = { it.id }) { p ->
@@ -980,7 +983,7 @@ private fun SelectorPoligonoDialog(
                             colors    = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF0D2B4E))
                         ) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(p.nombre.ifBlank { "Polígono #${p.id}" }, fontWeight = FontWeight.SemiBold)
+                                Text(p.nombre.ifBlank { s.poligonoNumero.format(p.id) }, fontWeight = FontWeight.SemiBold)
                                 Text("%.4f ha".format(p.area), color = Color.Gray, fontSize = 11.sp)
                             }
                         }
@@ -1019,7 +1022,7 @@ private fun SubparcelasEditSheet(
                 modifier = Modifier.padding(bottom = 16.dp)
             ) {
                 Icon(Icons.Default.Edit, null, tint = Color(0xFF90CAF9), modifier = Modifier.size(18.dp))
-                Text("Editar parcelas", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(LocalStrings.current.editarParcelas, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.weight(1f))
                 Text("${infos.size} parcelas", color = Color.White.copy(0.4f), fontSize = 12.sp)
             }
@@ -1046,6 +1049,7 @@ private fun ParcelaEditRow(
     var nombre      by remember(info.nombre)      { mutableStateOf(info.nombre) }
     var propietario by remember(info.propietario) { mutableStateOf(info.propietario) }
     var expandido   by remember { mutableStateOf(false) }
+    val s = LocalStrings.current
 
     androidx.compose.material3.Surface(
         shape = RoundedCornerShape(12.dp),
@@ -1073,7 +1077,7 @@ private fun ParcelaEditRow(
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        nombre.ifBlank { "Sin nombre" },
+                        nombre.ifBlank { s.sinNombre },
                         color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
                     )
                     if (info.areaHa > 0) {
@@ -1095,7 +1099,7 @@ private fun ParcelaEditRow(
                     OutlinedTextField(
                         value           = nombre,
                         onValueChange   = { nombre = it; onEditar(it, propietario) },
-                        label           = { Text("Nombre", fontSize = 11.sp) },
+                        label           = { Text(s.nombreLabel, fontSize = 11.sp) },
                         singleLine      = true,
                         modifier        = Modifier.fillMaxWidth(),
                         textStyle       = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Color.White),
@@ -1112,7 +1116,7 @@ private fun ParcelaEditRow(
                     OutlinedTextField(
                         value           = propietario,
                         onValueChange   = { propietario = it; onEditar(nombre, it) },
-                        label           = { Text("Propietario / Atributo", fontSize = 11.sp) },
+                        label           = { Text(s.propietarioAtributoLabel, fontSize = 11.sp) },
                         singleLine      = true,
                         modifier        = Modifier.fillMaxWidth(),
                         textStyle       = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Color.White),

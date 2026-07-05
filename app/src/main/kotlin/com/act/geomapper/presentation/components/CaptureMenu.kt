@@ -22,6 +22,7 @@ fun CaptureMenu(
     modifier: Modifier = Modifier
 ) {
     var expandido by remember { mutableStateOf(false) }
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     Column(
         modifier = modifier,
@@ -38,20 +39,20 @@ fun CaptureMenu(
                     onClick = onCancelar,
                     containerColor = MaterialTheme.colorScheme.errorContainer
                 ) {
-                    Icon(Icons.Default.Close, "Cancelar")
+                    Icon(Icons.Default.Close, s.cancelar)
                 }
                 SmallFloatingActionButton(
                     onClick = onCapturarPunto,
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 ) {
-                    Icon(Icons.Default.AddLocation, "Capturar punto")
+                    Icon(Icons.Default.AddLocation, s.puntoGps)
                 }
                 if (modoActivo != ModoCaptura.PUNTO) {
                     SmallFloatingActionButton(
                         onClick = onFinalizar,
                         containerColor = MaterialTheme.colorScheme.secondaryContainer
                     ) {
-                        Icon(Icons.Default.Check, "Finalizar")
+                        Icon(Icons.Default.Check, s.finalizar)
                     }
                 }
             }
@@ -63,13 +64,13 @@ fun CaptureMenu(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OpcionCaptura(Icons.Default.Place, "Punto") {
+                OpcionCaptura(Icons.Default.Place, s.punto) {
                     onSeleccionar(ModoCaptura.PUNTO); expandido = false
                 }
-                OpcionCaptura(Icons.Default.Timeline, "Línea") {
+                OpcionCaptura(Icons.Default.Timeline, s.linea) {
                     onSeleccionar(ModoCaptura.LINEA); expandido = false
                 }
-                OpcionCaptura(Icons.Default.Crop, "Polígono") {
+                OpcionCaptura(Icons.Default.Crop, s.poligono) {
                     onSeleccionar(ModoCaptura.POLIGONO); expandido = false
                 }
             }
@@ -83,7 +84,7 @@ fun CaptureMenu(
             ) {
                 Icon(
                     if (expandido) Icons.Default.Close else Icons.Default.Add,
-                    "Capturar"
+                    s.capturar
                 )
             }
         }

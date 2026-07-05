@@ -27,6 +27,7 @@ fun CapturePanel(
     modifier : Modifier = Modifier
 ) {
     var expandido by remember { mutableStateOf(true) }
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     // Punto pulsante
     val inf = rememberInfiniteTransition(label = "panelDot")
@@ -51,7 +52,7 @@ fun CapturePanel(
                 Box(Modifier.size(8.dp).background(VerdeActivo.copy(alpha = dotAlpha), CircleShape))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "HERRAMIENTA DE CAPTURA",
+                    s.herramientaCaptura,
                     color      = VerdeActivo,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize   = 12.sp,
@@ -67,7 +68,7 @@ fun CapturePanel(
                 IconButton(onClick = { expandido = !expandido }, modifier = Modifier.size(30.dp)) {
                     Icon(
                         if (expandido) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                        "Colapsar",
+                        s.colapsar,
                         tint     = AzulHeader,
                         modifier = Modifier.size(20.dp)
                     )
@@ -84,8 +85,8 @@ fun CapturePanel(
                     modifier              = Modifier.padding(top = 10.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    CapturePanelBtn(Icons.Default.GpsFixed, "GPS",  VerdeActivo, onClick = onGps,  modifier = Modifier.weight(1f))
-                    CapturePanelBtn(Icons.Default.Map,      "Mapa", AzulHeader,  onClick = onMapa, modifier = Modifier.weight(1f))
+                    CapturePanelBtn(Icons.Default.GpsFixed, s.gps,  VerdeActivo, onClick = onGps,  modifier = Modifier.weight(1f))
+                    CapturePanelBtn(Icons.Default.Map,      s.mapa, AzulHeader,  onClick = onMapa, modifier = Modifier.weight(1f))
                 }
             }
         }

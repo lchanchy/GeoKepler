@@ -31,6 +31,7 @@ fun DescargaMapaDialog(
     val descargando = progresoDescarga in 0..100
     val completado  = progresoDescarga == 101
     val error       = progresoDescarga == -2
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     val tilesEstimados = remember(bbox, zoomMax) { estimarTiles(bbox, 14, zoomMax) }
 
@@ -45,7 +46,7 @@ fun DescargaMapaDialog(
                         tint = Color(0xFF81C784), modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Descargar área definida",
+                        s.descargarAreaDefinida,
                         color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
                         modifier = Modifier.weight(1f)
                     )
@@ -57,9 +58,9 @@ fun DescargaMapaDialog(
                     }
                 }
 
-                Text("Fuente: $basemapEtiqueta", color = Color.White.copy(0.6f), fontSize = 11.sp)
+                Text(s.fuenteLabel.format(basemapEtiqueta), color = Color.White.copy(0.6f), fontSize = 11.sp)
                 Text(
-                    "N%.4f  S%.4f  E%.4f  O%.4f".format(
+                    "${s.norte}%.4f  ${s.sur}%.4f  ${s.este}%.4f  ${s.oeste}%.4f".format(
                         bbox.latNorth, bbox.latSouth, bbox.lonEast, bbox.lonWest),
                     color = Color.White.copy(0.45f), fontSize = 10.sp
                 )
@@ -68,7 +69,7 @@ fun DescargaMapaDialog(
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row {
-                        Text("Nivel máximo de detalle: ",
+                        Text(s.nivelDetalleMax,
                             color = Color.White.copy(0.7f), fontSize = 12.sp)
                         Text("z$zoomMax",
                             color = Color(0xFF90CAF9), fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -84,12 +85,12 @@ fun DescargaMapaDialog(
                     )
                     Text(
                         when (zoomMax) {
-                            14   -> "Barrios (resolución ~10m)"
-                            15   -> "Calles (~5m)"
-                            16   -> "Manzanas (~3m)"
-                            17   -> "Edificios (~1.5m)"
-                            18   -> "Detalle alto (~0.7m)"
-                            else -> "Máximo (~0.3m)"
+                            14   -> s.zoomBarrios
+                            15   -> s.zoomCalles
+                            16   -> s.zoomManzanas
+                            17   -> s.zoomEdificios
+                            18   -> s.zoomDetalleAlto
+                            else -> s.zoomMaximo
                         },
                         color = Color.White.copy(0.45f), fontSize = 10.sp
                     )
@@ -98,13 +99,13 @@ fun DescargaMapaDialog(
                 val tilesTexto = if (tilesEstimados > 10_000)
                     "~${tilesEstimados / 1000}k tiles" else "~$tilesEstimados tiles"
                 Text(
-                    "Estimado: $tilesTexto (z14–z$zoomMax)",
+                    s.estimadoTiles.format(tilesTexto, zoomMax),
                     color = if (tilesEstimados > 5000) Color(0xFFFFC107) else Color.White.copy(0.6f),
                     fontSize = 11.sp
                 )
                 if (tilesEstimados > 5000) {
                     Text(
-                        "El área es grande — la descarga puede tardar varios minutos.",
+                        s.areaGrandeAdvertencia,
                         color = Color(0xFFFF9800), fontSize = 10.sp
                     )
                 }
@@ -117,16 +118,16 @@ fun DescargaMapaDialog(
                             color     = Color(0xFF4CAF50),
                             trackColor = Color.White.copy(0.1f)
                         )
-                        Text("$progresoDescarga% descargado…",
+                        Text(s.descargadoPct.format(progresoDescarga),
                             color = Color.White.copy(0.6f), fontSize = 11.sp)
                     }
                 }
                 if (completado) {
-                    Text("¡Descarga completada!",
+                    Text(s.descargaCompletada,
                         color = Color(0xFF81C784), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
                 if (error) {
-                    Text("Error en la descarga. Verifique la conexión de datos.",
+                    Text(s.errorDescarga,
                         color = Color(0xFFEF5350), fontSize = 12.sp)
                 }
 
@@ -138,10 +139,10 @@ fun DescargaMapaDialog(
                         Button(
                             onClick = onDismiss,
                             colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                        ) { Text("Cerrar") }
+                        ) { Text(s.cerrar) }
                     } else {
                         TextButton(onClick = onDismiss, enabled = !descargando) {
-                            Text("Cancelar",
+                            Text(s.cancelar,
                                 color = Color.White.copy(if (descargando) 0.3f else 0.6f))
                         }
                         Button(
@@ -151,7 +152,7 @@ fun DescargaMapaDialog(
                         ) {
                             Icon(Icons.Default.CloudDownload, null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Descargar")
+                            Text(s.descargarBtn)
                         }
                     }
                 }

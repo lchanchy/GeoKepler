@@ -84,6 +84,7 @@ fun MapScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val azimut  = rememberAzimut()
     val win     = rememberWindowInfo()
+    val s       = com.act.geomapper.ui.theme.LocalStrings.current
 
     var progresoDescarga      by remember { mutableStateOf(-1) }
     var descargaBbox          by remember { mutableStateOf<org.osmdroid.util.BoundingBox?>(null) }
@@ -380,7 +381,7 @@ fun MapScreen(
             containerColor = Color(0xCC0D47A1),
             elevation      = FloatingActionButtonDefaults.elevation(2.dp, 2.dp)
         ) {
-            Icon(Icons.Default.MyLocation, "Mi ubicación", tint = Color.White, modifier = Modifier.size(win.iconSize))
+            Icon(Icons.Default.MyLocation, s.miUbicacion, tint = Color.White, modifier = Modifier.size(win.iconSize))
         }
 
         // ── Barra de captura ─────────────────────────────────────────────
@@ -499,7 +500,7 @@ fun MapScreen(
         // ── Barra de edición de geometría ─────────────────────────────────
         uiState.editingPredio?.let { predio ->
             BarraEdicion(
-                nombreEntidad = predio.nombre.ifBlank { "Sin nombre" },
+                nombreEntidad = predio.nombre.ifBlank { s.sinNombre },
                 onGuardar     = {
                     val vertices = vertexOverlay.obtenerVertices()
                     if (vertices.isNotEmpty()) {
@@ -526,10 +527,10 @@ fun MapScreen(
                 action = {
                     Row {
                         TextButton(onClick = viewModel::descartarRecuperacion) {
-                            Text("Descartar", color = Color(0xFFEF9A9A))
+                            Text(s.descartar, color = Color(0xFFEF9A9A))
                         }
                         TextButton(onClick = viewModel::confirmarRecuperacion) {
-                            Text("Continuar", color = Color(0xFF81C784))
+                            Text(s.continuarBtn, color = Color(0xFF81C784))
                         }
                     }
                 },
@@ -548,7 +549,7 @@ fun MapScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 100.dp, start = 16.dp, end = 80.dp),
-                action = { TextButton(onClick = viewModel::limpiarError) { Text("OK") } }
+                action = { TextButton(onClick = viewModel::limpiarError) { Text(s.ok) } }
             ) { Text(err, fontSize = 13.sp) }
         }
 
@@ -581,7 +582,7 @@ fun MapScreen(
         if (mostrarDialogoDescarga && bbox != null) {
             com.act.geomapper.presentation.components.DescargaMapaDialog(
                 bbox             = bbox,
-                basemapEtiqueta  = basemapActual.etiqueta,
+                basemapEtiqueta  = basemapActual.etiquetaLocalizada(s),
                 progresoDescarga = progresoDescarga,
                 onDismiss = {
                     if (progresoDescarga !in 0..100) {
@@ -608,7 +609,7 @@ fun MapScreen(
                                     onDescargaCompletada(
                                         com.act.geomapper.data.offline.DescargaOffline(
                                             id              = System.currentTimeMillis(),
-                                            nombre          = "${basemapActual.etiqueta} z14–z$zoomMaxArg",
+                                            nombre          = "${basemapActual.etiquetaLocalizada(s)} z14–z$zoomMaxArg",
                                             norte           = bbox.latNorth,
                                             sur             = bbox.latSouth,
                                             este            = bbox.lonEast,
@@ -952,6 +953,7 @@ private fun BarraEdicion(
     onCancelar   : () -> Unit,
     modifier     : Modifier = Modifier
 ) {
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
     GlassBox(shape = RoundedCornerShape(20.dp), modifier = modifier) {
         Row(
             modifier              = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -960,7 +962,7 @@ private fun BarraEdicion(
         ) {
             Icon(Icons.Default.EditLocation, null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
             Text(
-                "Editando: $nombreEntidad",
+                s.editando.format(nombreEntidad),
                 color    = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
@@ -968,7 +970,7 @@ private fun BarraEdicion(
             )
             // Cancelar
             IconButton(onClick = onCancelar, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Default.Close, "Cancelar edición", tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Close, s.cancelarEdicion, tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
             }
             // Guardar
             Button(
@@ -979,7 +981,7 @@ private fun BarraEdicion(
             ) {
                 Icon(Icons.Default.Check, null, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Guardar", fontSize = 12.sp)
+                Text(s.guardar, fontSize = 12.sp)
             }
         }
     }
@@ -1120,6 +1122,7 @@ private fun AreaDescargaPanel(
     onConfirmar : () -> Unit,
     modifier    : Modifier = Modifier
 ) {
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
     GlassBox(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), modifier = modifier) {
         Column(
             modifier            = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1129,13 +1132,13 @@ private fun AreaDescargaPanel(
                 Icon(Icons.Default.CloudDownload, null,
                     tint = Color(0xFF81C784), modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Definir área de descarga",
+                Text(s.definirAreaDescarga.removeSuffix("…"),
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp,
                     modifier = Modifier.weight(1f))
             }
             Text(
-                if (numVertices < 3) "Toca el mapa para añadir vértices ($numVertices/3 mínimo)"
-                else "Polígono listo ($numVertices vértices) — confirma para continuar",
+                if (numVertices < 3) s.tocaMapaVertices.format(numVertices)
+                else s.poligonoListo.format(numVertices),
                 color = Color.White.copy(0.65f), fontSize = 11.sp
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1152,7 +1155,7 @@ private fun AreaDescargaPanel(
                         tint = if (numVertices > 0) Color.White else Color.White.copy(0.3f),
                         modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Deshacer", color = if (numVertices > 0) Color.White else Color.White.copy(0.3f),
+                    Text(s.deshacer, color = if (numVertices > 0) Color.White else Color.White.copy(0.3f),
                         fontSize = 11.sp)
                 }
                 // Cancelar
@@ -1162,7 +1165,7 @@ private fun AreaDescargaPanel(
                     contentPadding = PaddingValues(vertical = 6.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF5350).copy(0.6f))
                 ) {
-                    Text("Cancelar", color = Color(0xFFEF5350), fontSize = 11.sp)
+                    Text(s.cancelar, color = Color(0xFFEF5350), fontSize = 11.sp)
                 }
                 // Confirmar
                 Button(
@@ -1177,7 +1180,7 @@ private fun AreaDescargaPanel(
                 ) {
                     Icon(Icons.Default.Check, null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Confirmar", fontSize = 11.sp)
+                    Text(s.confirmar, fontSize = 11.sp)
                 }
             }
         }

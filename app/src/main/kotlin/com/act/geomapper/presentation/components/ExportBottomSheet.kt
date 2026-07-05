@@ -92,7 +92,7 @@ fun ExportBottomSheet(
                 guardarLbl  = s.guardar,
                 compartirLbl= s.compartir,
                 onGuardar   = { snackMsg = guardarArchivo(context, proyecto, predios, ExportFormat.GEOJSON) },
-                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.GEOJSON) }
+                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.GEOJSON, compartirLabel = s.compartir) }
             )
             FormatoCard(
                 icono       = Icons.Default.Map,
@@ -101,7 +101,7 @@ fun ExportBottomSheet(
                 guardarLbl  = s.guardar,
                 compartirLbl= s.compartir,
                 onGuardar   = { snackMsg = guardarArchivo(context, proyecto, predios, ExportFormat.KML) },
-                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.KML) }
+                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.KML, compartirLabel = s.compartir) }
             )
             FormatoCard(
                 icono       = Icons.Default.GpsFixed,
@@ -110,7 +110,7 @@ fun ExportBottomSheet(
                 guardarLbl  = s.guardar,
                 compartirLbl= s.compartir,
                 onGuardar   = { snackMsg = guardarArchivo(context, proyecto, predios, ExportFormat.GPX) },
-                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.GPX) }
+                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.GPX, compartirLabel = s.compartir) }
             )
             FormatoCard(
                 icono       = Icons.Default.FolderOpen,
@@ -119,7 +119,7 @@ fun ExportBottomSheet(
                 guardarLbl  = s.guardar,
                 compartirLbl= s.compartir,
                 onGuardar   = { snackMsg = guardarArchivo(context, proyecto, predios, ExportFormat.GEOJSON, zip = true) },
-                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.GEOJSON, zip = true) }
+                onCompartir = { compartirArchivo(context, proyecto, predios, ExportFormat.GEOJSON, zip = true, compartirLabel = s.compartir) }
             )
         }
     }
@@ -227,7 +227,8 @@ private fun compartirArchivo(
     proyecto: Proyecto?,
     predios : List<Predio>,
     formato : ExportFormat,
-    zip     : Boolean = false
+    zip     : Boolean = false,
+    compartirLabel: String = "Compartir vía"
 ) {
     if (proyecto == null) return
     runCatching {
@@ -240,7 +241,7 @@ private fun compartirArchivo(
             putExtra(Intent.EXTRA_SUBJECT, "GeoKepler — ${proyecto.nombre}")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Compartir vía").also {
+        context.startActivity(Intent.createChooser(intent, compartirLabel).also {
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         })
     }

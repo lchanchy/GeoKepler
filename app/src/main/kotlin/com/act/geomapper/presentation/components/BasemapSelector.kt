@@ -47,6 +47,14 @@ fun basemapDesdeEtiqueta(etiqueta: String): Basemap = when (etiqueta) {
     else                       -> Basemap.OSM
 }
 
+/** Etiqueta traducida para mostrar en UI (etiqueta interna se usa para persistencia/matching) */
+fun Basemap.etiquetaLocalizada(s: com.act.geomapper.ui.theme.AppStrings): String = when (this) {
+    Basemap.OSM       -> etiqueta
+    Basemap.GoogleSat -> s.basemapSatelite
+    Basemap.GoogleHyb -> s.basemapHibrido
+    Basemap.GoogleStr -> s.basemapCalles
+}
+
 private fun googleTile(lyrs: String): XYTileSource {
     // Capturamos las URLs en una val local; no accedemos a mBaseUrl (campo interno de osmdroid)
     val hosts = arrayOf(
@@ -79,10 +87,11 @@ fun BasemapPanel(
     modifier       : Modifier = Modifier
 ) {
     val opciones = listOf(Basemap.OSM, Basemap.GoogleSat, Basemap.GoogleHyb, Basemap.GoogleStr)
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     GlassBox(shape = RoundedCornerShape(16.dp), modifier = modifier) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Mapa de fondo", color = Color.White.copy(0.7f), fontSize = 11.sp,
+            Text(s.mapaDeFondo, color = Color.White.copy(0.7f), fontSize = 11.sp,
                  fontWeight = FontWeight.SemiBold)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(opciones) { bm ->
@@ -102,7 +111,7 @@ fun BasemapPanel(
                         Column(horizontalAlignment = Alignment.CenterHorizontally,
                                verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(bm.icono, fontSize = 22.sp)
-                            Text(bm.etiqueta,
+                            Text(bm.etiquetaLocalizada(s),
                                  color      = if (activo) Color(0xFF81C784) else Color.White,
                                  fontSize   = 10.sp,
                                  fontWeight = if (activo) FontWeight.Bold else FontWeight.Normal)
@@ -121,7 +130,7 @@ fun BasemapPanel(
                 Icon(Icons.Default.CloudDownload, null,
                     tint = Color(0xFF81C784), modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Definir área de descarga…", color = Color(0xFF81C784), fontSize = 11.sp)
+                Text(s.definirAreaDescarga, color = Color(0xFF81C784), fontSize = 11.sp)
             }
         }
     }
@@ -135,6 +144,7 @@ fun BasemapSelector(
 ) {
     var expandido by remember { mutableStateOf(false) }
     val opciones = listOf(Basemap.OSM, Basemap.GoogleSat, Basemap.GoogleHyb, Basemap.GoogleStr)
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     Column(modifier = modifier, horizontalAlignment = Alignment.End) {
 
@@ -142,7 +152,7 @@ fun BasemapSelector(
         if (expandido) {
             GlassBox(shape = RoundedCornerShape(16.dp)) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Mapa de fondo", color = Color.White.copy(0.7f), fontSize = 11.sp,
+                    Text(s.mapaDeFondo, color = Color.White.copy(0.7f), fontSize = 11.sp,
                          fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
 
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -162,7 +172,7 @@ fun BasemapSelector(
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(bm.icono, fontSize = 22.sp)
-                                    Text(bm.etiqueta, color = if (activo) Color(0xFF81C784) else Color.White, fontSize = 10.sp, fontWeight = if (activo) FontWeight.Bold else FontWeight.Normal)
+                                    Text(bm.etiquetaLocalizada(s), color = if (activo) Color(0xFF81C784) else Color.White, fontSize = 10.sp, fontWeight = if (activo) FontWeight.Bold else FontWeight.Normal)
                                     if (activo) Icon(Icons.Default.Check, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(12.dp))
                                 }
                             }
@@ -176,7 +186,7 @@ fun BasemapSelector(
         // Botón disparador
         GlassBox(shape = RoundedCornerShape(12.dp)) {
             IconButton(onClick = { expandido = !expandido }, modifier = Modifier.size(44.dp)) {
-                Icon(Icons.Default.Layers, "Capas", tint = Color.White, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Layers, s.capas, tint = Color.White, modifier = Modifier.size(20.dp))
             }
         }
     }

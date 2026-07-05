@@ -80,20 +80,21 @@ private fun CoordInputDms(onDismiss: () -> Unit, onConfirm: (PuntoGps) -> Unit) 
     var lonS by remember { mutableStateOf("") }
     var lonH by remember { mutableStateOf("E") }   // E / O
     var error by remember { mutableStateOf<String?>(null) }
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
 
     Dialog(onDismissRequest = onDismiss) {
         GlassLightBox(shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Ingresar coordenadas GMS", color = AzulHeader, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(s.ingresarCoordGms, color = AzulHeader, fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
                 // Latitud
-                Text("Latitud", color = AzulHeader.copy(0.7f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(s.latitud, color = AzulHeader.copy(0.7f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 FilaDms(latG, latM, latS, latH, listOf("N","S"),
                     { latG = it; error = null }, { latM = it; error = null },
                     { latS = it; error = null }, { latH = it })
 
                 // Longitud
-                Text("Longitud", color = AzulHeader.copy(0.7f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(s.longitud, color = AzulHeader.copy(0.7f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 FilaDms(lonG, lonM, lonS, lonH, listOf("E","O"),
                     { lonG = it; error = null }, { lonM = it; error = null },
                     { lonS = it; error = null }, { lonH = it })
@@ -106,7 +107,7 @@ private fun CoordInputDms(onDismiss: () -> Unit, onConfirm: (PuntoGps) -> Unit) 
                     onCapturar = {
                         val lat = parseDms(latG, latM, latS, latH)
                         val lon = parseDms(lonG, lonM, lonS, lonH)
-                        if (lat == null || lon == null) { error = "Valores inválidos"; return@BotonesCoord }
+                        if (lat == null || lon == null) { error = s.valoresInvalidos; return@BotonesCoord }
                         onConfirm(PuntoGps(lat, lon)); onDismiss()
                     }
                 )
@@ -167,13 +168,14 @@ private fun CampoCoord(
 
 @Composable
 private fun BotonesCoord(onDismiss: () -> Unit, habilitado: Boolean, onCapturar: () -> Unit) {
+    val s = com.act.geomapper.ui.theme.LocalStrings.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-        TextButton(onClick = onDismiss) { Text("Cancelar") }
+        TextButton(onClick = onDismiss) { Text(s.cancelar) }
         Button(
             onClick = onCapturar,
             enabled = habilitado,
             colors  = ButtonDefaults.buttonColors(containerColor = VerdeTeal)
-        ) { Text("Capturar") }
+        ) { Text(s.capturar) }
     }
 }
 

@@ -186,12 +186,13 @@ class MainActivity : ComponentActivity() {
 
             GeoMapperTheme(oscuro = settings.darkMode, idioma = settings.language) {
                 if (mostrarAvisoRoot) {
+                    val s = com.act.geomapper.ui.theme.LocalStrings.current
                     AlertDialog(
                         onDismissRequest = { mostrarAvisoRoot = false },
-                        title   = { Text("Dispositivo con permisos root") },
-                        text    = { Text("Se detectaron permisos root en este dispositivo. GeoKepler puede continuar, pero los datos no están garantizados como seguros en este entorno.") },
+                        title   = { Text(s.dispositivoRootTitulo) },
+                        text    = { Text(s.dispositivoRootDesc) },
                         confirmButton = {
-                            TextButton(onClick = { mostrarAvisoRoot = false }) { Text("Entendido") }
+                            TextButton(onClick = { mostrarAvisoRoot = false }) { Text(s.entendido) }
                         }
                     )
                 }
@@ -527,6 +528,7 @@ private fun MapaApp(
         // ── FAB inferior derecho: abre opciones de captura ───────────────
         val win = com.act.geomapper.ui.theme.rememberWindowInfo()
         if (mapState.modoCaptura == ModoCaptura.NINGUNO && !dibujandoAreaDescarga) {
+            val s = com.act.geomapper.ui.theme.LocalStrings.current
             Column(
                 modifier              = Modifier
                     .align(Alignment.BottomEnd)
@@ -541,7 +543,6 @@ private fun MapaApp(
                     enter   = fadeIn() + slideInVertically { it },
                     exit    = fadeOut() + slideOutVertically { it }
                 ) {
-                    val s = com.act.geomapper.ui.theme.LocalStrings.current
                     Column(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -566,7 +567,7 @@ private fun MapaApp(
                 ) {
                     Icon(
                         if (fabExpandido) Icons.Default.Close else Icons.Default.AddLocation,
-                        "Capturar", tint = Color.White
+                        s.capturar, tint = Color.White
                     )
                 }
             }

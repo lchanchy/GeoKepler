@@ -32,13 +32,14 @@ fun SettingsScreen(
 ) {
     val settings = vm.settings.collectAsStateWithLifecycle().value
     val context  = LocalContext.current
+    val s        = com.act.geomapper.ui.theme.LocalStrings.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Configuración", fontWeight = FontWeight.Bold) },
+                title = { Text(s.configuracion, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Volver") }
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, s.volver) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor        = Color(0xFF0A0A0A),
@@ -60,16 +61,16 @@ fun SettingsScreen(
         ) {
 
             // ── Unidades de distancia ────────────────────────────────────
-            SettingsSection(Icons.Default.Straighten, "Unidades de distancia") {
+            SettingsSection(Icons.Default.Straighten, s.unidadesDistancia) {
                 SettingsChipGroup(
-                    opciones   = listOf("Metros (m)" to DistanceUnit.METERS, "Kilómetros (km)" to DistanceUnit.KILOMETERS),
+                    opciones   = listOf(s.metros to DistanceUnit.METERS, s.kilometros to DistanceUnit.KILOMETERS),
                     seleccion  = settings.distanceUnit,
                     onSelect   = vm::setDistanceUnit
                 )
             }
 
             // ── Unidades de área ─────────────────────────────────────────
-            SettingsSection(Icons.Default.SquareFoot, "Unidades de área") {
+            SettingsSection(Icons.Default.SquareFoot, s.unidadesArea) {
                 SettingsChipGroup(
                     opciones  = listOf(
                         "m²"  to AreaUnit.SQUARE_METERS,
@@ -82,7 +83,7 @@ fun SettingsScreen(
             }
 
             // ── Idioma ───────────────────────────────────────────────────
-            SettingsSection(Icons.Default.Language, "Idioma") {
+            SettingsSection(Icons.Default.Language, s.idiomaLabel) {
                 SettingsChipGroup(
                     opciones  = listOf("Español" to AppLanguage.SPANISH, "English" to AppLanguage.ENGLISH),
                     seleccion = settings.language,
@@ -91,11 +92,11 @@ fun SettingsScreen(
             }
 
             // ── Formato de coordenadas ───────────────────────────────────
-            SettingsSection(Icons.Default.GpsFixed, "Coordenadas") {
+            SettingsSection(Icons.Default.GpsFixed, s.coordenadasLabel) {
                 SettingsChipGroup(
                     opciones  = listOf(
-                        "Decimal  37.4219°"    to CoordFormat.DECIMAL,
-                        "GMS  37°25'19\"N"     to CoordFormat.DMS
+                        "Decimal  37.4219°" to CoordFormat.DECIMAL,
+                        s.formatoGms        to CoordFormat.DMS
                     ),
                     seleccion = settings.coordFormat,
                     onSelect  = vm::setCoordFormat
@@ -103,18 +104,18 @@ fun SettingsScreen(
             }
 
             // ── Tema ─────────────────────────────────────────────────────
-            SettingsSection(Icons.Default.DarkMode, "Tema") {
+            SettingsSection(Icons.Default.DarkMode, s.temaLabel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = settings.darkMode,
                         onClick  = { vm.setDarkMode(true) },
-                        label    = { Text("Oscuro") },
+                        label    = { Text(s.oscuro) },
                         leadingIcon = if (settings.darkMode) {{ Icon(Icons.Default.Check, null, Modifier.size(14.dp)) }} else null
                     )
                     FilterChip(
                         selected = !settings.darkMode,
                         onClick  = { vm.setDarkMode(false) },
-                        label    = { Text("Claro") },
+                        label    = { Text(s.claro) },
                         leadingIcon = if (!settings.darkMode) {{ Icon(Icons.Default.Check, null, Modifier.size(14.dp)) }} else null
                     )
                 }
@@ -131,17 +132,17 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.ChatBubbleOutline, null, tint = Color(0xFF81C784), modifier = Modifier.size(18.dp))
-                        Text("Mejoras y comentarios", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(s.mejorasComentarios, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     }
                     Text(
-                        "¿Tienes sugerencias o encontraste un problema? Contáctanos por WhatsApp.",
+                        s.feedbackDescripcion,
                         color    = Color(0xFFB0BEC5),
                         fontSize = 12.sp
                     )
                     Button(
                         onClick = {
                             val numero  = "573124803853"
-                            val mensaje = Uri.encode("Hola, tengo una sugerencia o comentario sobre GeoKepler:")
+                            val mensaje = Uri.encode(s.whatsappMensaje)
                             val intent  = Intent(Intent.ACTION_VIEW,
                                 Uri.parse("https://wa.me/$numero?text=$mensaje"))
                             context.startActivity(intent)
@@ -152,7 +153,7 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.Chat, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Escribir por WhatsApp", fontWeight = FontWeight.Bold)
+                        Text(s.escribirWhatsapp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
