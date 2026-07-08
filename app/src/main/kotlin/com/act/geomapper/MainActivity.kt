@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -582,6 +585,30 @@ private fun MapaApp(
                     .padding(bottom = 100.dp, start = 16.dp, end = 16.dp),
                 action = { TextButton(onClick = importVM::limpiarError) { Text(strings.ok) } }
             ) { Text(err, fontSize = 13.sp) }
+        }
+
+        // ── Progreso de carga de ráster (GeoTIFF) ────────────────────────
+        importState.progresoRaster?.let { pct ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xE6111111))
+                    .padding(horizontal = 28.dp, vertical = 24.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        progress = { pct / 100f },
+                        color    = Color(0xFF4CAF50),
+                        trackColor = Color.White.copy(0.15f),
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Text("${strings.importarMapa}… $pct%", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+            }
         }
     }
 

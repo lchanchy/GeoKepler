@@ -15,10 +15,11 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 data class ImportState(
-    val preview    : List<EntidadImportada> = emptyList(),
-    val procesando : Boolean                = false,
-    val guardadas  : Int                    = 0,
-    val error      : String?               = null
+    val preview        : List<EntidadImportada> = emptyList(),
+    val procesando     : Boolean                = false,
+    val guardadas      : Int                    = 0,
+    val error          : String?               = null,
+    val progresoRaster : Int?                   = null   // null = sin carga en curso; 0-100 = %
 )
 
 class ImportViewModel(
@@ -74,14 +75,18 @@ class ImportViewModel(
     }
 
     fun cargarGeoTiff(context: Context, uri: Uri) {
-        _state.update { it.copy(procesando = true, error = null) }
+        _state.update { it.copy(procesando = true, error = null, progresoRaster = 0) }
         viewModelScope.launch {
-            runCatching { com.act.geomapper.data.geotiff.GeoTiffImporter(context).importar(uri) }
+            runCatching {
+                com.act.geomapper.data.geotiff.GeoTiffImporter(context).importar(uri) { pct ->
+                    _state.update { it.copy(progresoRaster = pct) }
+                }
+            }
                 .onSuccess { data ->
                     _geoPdfData.value = data
-                    _state.update { it.copy(procesando = false) }
+                    _state.update { it.copy(procesando = false, progresoRaster = null) }
                 }
-                .onFailure { e -> _state.update { it.copy(procesando = false, error = e.message ?: "Error al importar el GeoTIFF") } }
+                .onFailure { e -> _state.update { it.copy(procesando = false, progresoRaster = null, error = e.message ?: "Error al importar el GeoTIFF") } }
         }
     }
 

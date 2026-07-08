@@ -14,7 +14,7 @@ class GeoTiffImporter(private val context: Context) {
     // así que el límite es solo para evitar procesar archivos absurdos, no por memoria.
     private val maxBytes = 1024L * 1024 * 1024 // 1 GB
 
-    suspend fun importar(uri: Uri): GeoPdfData = withContext(Dispatchers.IO) {
+    suspend fun importar(uri: Uri, onProgress: (Int) -> Unit = {}): GeoPdfData = withContext(Dispatchers.IO) {
         val nombre = resolverNombre(uri)
         val resultado = context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
             FileInputStream(pfd.fileDescriptor).channel.use { canal ->
@@ -25,7 +25,7 @@ class GeoTiffImporter(private val context: Context) {
                     )
                 }
                 val buffer = canal.map(FileChannel.MapMode.READ_ONLY, 0, tamano)
-                GeoTiffReader.leer(buffer)
+                GeoTiffReader.leer(buffer, onProgress)
             }
         } ?: throw GeoTiffUnsupportedException("No se pudo abrir el archivo")
 

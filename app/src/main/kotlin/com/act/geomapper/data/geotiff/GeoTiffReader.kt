@@ -67,7 +67,7 @@ object GeoTiffReader {
      * a una resolución reducida saltándose tiras/tiles que no aportan ningún píxel muestreado.
      * Así el costo en memoria es independiente del tamaño real del archivo.
      */
-    fun leer(buf: ByteBuffer): GeoTiffResult {
+    fun leer(buf: ByteBuffer, onProgress: (Int) -> Unit = {}): GeoTiffResult {
         if (buf.capacity() < 8) throw GeoTiffUnsupportedException("Archivo TIFF inválido o vacío")
         buf.order(
             when {
@@ -89,10 +89,16 @@ object GeoTiffReader {
             throw GeoTiffUnsupportedException("Dimensiones de TIFF inválidas o no soportadas (${width}x${height})")
         }
 
+        onProgress(0)
         val bbox = extraerGeoreferencia(ifd, buf, width, height)
-        val (pixeles, outW, outH) = decodificarPixelesMuestreado(buf, ifd, width, height)
+        // Decodificación 0–90 %; contraste + bitmap 90–100 %.
+        val (pixeles, outW, outH) = decodificarPixelesMuestreado(buf, ifd, width, height) { p ->
+            onProgress((p * 90) / 100)
+        }
         estirarContraste(pixeles)
+        onProgress(95)
         val bitmap = Bitmap.createBitmap(pixeles, outW, outH, Bitmap.Config.ARGB_8888)
+        onProgress(100)
 
         return GeoTiffResult(bitmap, norte = bbox[0], sur = bbox[1], este = bbox[2], oeste = bbox[3])
     }
@@ -363,7 +369,8 @@ object GeoTiffReader {
      * se descomprimen). Esto es lo que permite importar rásteres de cientos de MB sin OOM.
      */
     private fun decodificarPixelesMuestreado(
-        buf: ByteBuffer, ifd: Map<Int, Tag>, width: Int, height: Int
+        buf: ByteBuffer, ifd: Map<Int, Tag>, width: Int, height: Int,
+        onProgress: (Int) -> Unit = {}
     ): Triple<IntArray, Int, Int> {
         val bitsPerSample = readLongArray(buf, ifd[258] ?: throw GeoTiffUnsupportedException("TIFF sin BitsPerSample"))
         if (bitsPerSample.any { it != 8L }) {
@@ -429,7 +436,10 @@ object GeoTiffReader {
             val stride = tileWidth * spp
             val esperado = tileWidth * tileLength * spp
 
+            var progAnt = -1
             for (ty in 0 until tilesDown) {
+                val prog = (ty * 100) / tilesDown
+                if (prog != progAnt) { onProgress(prog); progAnt = prog }
                 val y0 = ty * tileLength
                 val filas = min(tileLength, height - y0)
                 val primeraFila = primeraMuestraDesde(y0)
@@ -474,7 +484,10 @@ object GeoTiffReader {
             val stripByteCounts = readLongArray(buf, ifd[279] ?: throw GeoTiffUnsupportedException("TIFF sin StripByteCounts"))
             val stride = width * spp
 
+            var progAnt = -1
             for (s in stripOffsets.indices) {
+                val prog = (s * 100) / stripOffsets.size
+                if (prog != progAnt) { onProgress(prog); progAnt = prog }
                 val y0 = s * rowsPerStrip
                 if (y0 >= height) break
                 val filas = min(rowsPerStrip, height - y0)
