@@ -202,6 +202,20 @@ fun MapScreen(
         mapView.invalidate()
     }
 
+    // Al importar un ráster (GeoPDF / GeoTIFF), centrar y ajustar el zoom a su extensión
+    // para que sea visible aunque esté lejos de la vista actual. Clave: geoPdfData (no la
+    // visibilidad) — solo se dispara cuando llega un ráster nuevo, no al mostrar/ocultar.
+    LaunchedEffect(geoPdfData) {
+        geoPdfData?.let { d ->
+            runCatching {
+                val bbox = org.osmdroid.util.BoundingBox(d.norte, d.este, d.sur, d.oeste)
+                mapView.zoomToBoundingBox(bbox, true, 48)
+            }.onFailure {
+                mapView.controller.animateTo(GeoPoint((d.norte + d.sur) / 2, (d.este + d.oeste) / 2))
+            }
+        }
+    }
+
     LaunchedEffect(descargasOffline) {
         // Eliminar overlays de teselas anteriores
         offlineTileData.forEach { (provider, overlay) ->
