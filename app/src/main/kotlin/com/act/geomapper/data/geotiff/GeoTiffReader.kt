@@ -91,9 +91,61 @@ object GeoTiffReader {
 
         val bbox = extraerGeoreferencia(ifd, buf, width, height)
         val (pixeles, outW, outH) = decodificarPixelesMuestreado(buf, ifd, width, height)
+        estirarContraste(pixeles)
         val bitmap = Bitmap.createBitmap(pixeles, outW, outH, Bitmap.Config.ARGB_8888)
 
         return GeoTiffResult(bitmap, norte = bbox[0], sur = bbox[1], este = bbox[2], oeste = bbox[3])
+    }
+
+    /**
+     * Estiramiento de contraste automático (percentil 2–98 por canal), como el que aplican
+     * QGIS/ArcGIS al abrir un ráster. Las ortofotos y las imágenes multiespectrales crudas
+     * suelen tener valores concentrados en un rango estrecho y se ven oscuras/planas sin esto.
+     * Opera sobre la imagen ya reducida (~2048px), así que es barato.
+     */
+    private fun estirarContraste(pixeles: IntArray) {
+        if (pixeles.isEmpty()) return
+        val histR = IntArray(256); val histG = IntArray(256); val histB = IntArray(256)
+        var validos = 0
+        for (p in pixeles) {
+            if ((p ushr 24) and 0xFF == 0) continue // ignorar transparentes
+            histR[(p ushr 16) and 0xFF]++
+            histG[(p ushr 8) and 0xFF]++
+            histB[p and 0xFF]++
+            validos++
+        }
+        if (validos == 0) return
+
+        fun percentil(hist: IntArray, frac: Double): Int {
+            val objetivo = (validos * frac).toInt()
+            var acum = 0
+            for (v in 0..255) { acum += hist[v]; if (acum >= objetivo) return v }
+            return 255
+        }
+
+        val loR = percentil(histR, 0.02); val hiR = percentil(histR, 0.98)
+        val loG = percentil(histG, 0.02); val hiG = percentil(histG, 0.98)
+        val loB = percentil(histB, 0.02); val hiB = percentil(histB, 0.98)
+
+        // Tabla de mapeo [lo,hi] -> [0,255] por canal; si el canal es plano se deja igual.
+        fun tabla(lo: Int, hi: Int): IntArray {
+            val t = IntArray(256)
+            if (hi <= lo) { for (v in 0..255) t[v] = v; return t }
+            val rango = (hi - lo).toDouble()
+            for (v in 0..255) t[v] = (((v - lo) / rango) * 255.0).toInt().coerceIn(0, 255)
+            return t
+        }
+        val tR = tabla(loR, hiR); val tG = tabla(loG, hiG); val tB = tabla(loB, hiB)
+
+        for (i in pixeles.indices) {
+            val p = pixeles[i]
+            val a = (p ushr 24) and 0xFF
+            if (a == 0) continue
+            val r = tR[(p ushr 16) and 0xFF]
+            val g = tG[(p ushr 8) and 0xFF]
+            val b = tB[p and 0xFF]
+            pixeles[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
     }
 
     // ── IFD / tags ────────────────────────────────────────────────────────────
