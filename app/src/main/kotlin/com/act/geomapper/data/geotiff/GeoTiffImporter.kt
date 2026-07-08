@@ -24,17 +24,45 @@ class GeoTiffImporter(private val context: Context) {
     }
 
     private fun leerBytes(uri: Uri): ByteArray {
+        // Rechazar por tamaño declarado ANTES de tocar el contenido — evita el OOM
+        // que provocaba readBytes() intentando cargar archivos enormes de una vez.
+        val tamanoDeclarado = obtenerTamano(uri)
+        if (tamanoDeclarado != null && tamanoDeclarado > maxBytes) {
+            throw GeoTiffUnsupportedException(
+                "El archivo es demasiado grande (${tamanoDeclarado / (1024 * 1024)} MB). Máximo soportado: ${maxBytes / (1024 * 1024)} MB."
+            )
+        }
         val stream = context.contentResolver.openInputStream(uri)
             ?: throw GeoTiffUnsupportedException("No se pudo abrir el archivo")
         stream.use {
-            val bytes = it.readBytes()
-            if (bytes.size > maxBytes) {
-                throw GeoTiffUnsupportedException(
-                    "El archivo es demasiado grande (${bytes.size / (1024 * 1024)} MB). Máximo soportado: 80 MB."
-                )
+            // Lectura acotada por bloques: nunca se aloja más de maxBytes, ni siquiera
+            // si el proveedor no reportó el tamaño real (respaldo defensivo).
+            val buffer = java.io.ByteArrayOutputStream(
+                minOf(tamanoDeclarado ?: (8L * 1024 * 1024), maxBytes.toLong()).toInt()
+            )
+            val chunk = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val n = it.read(chunk)
+                if (n < 0) break
+                total += n
+                if (total > maxBytes) {
+                    throw GeoTiffUnsupportedException(
+                        "El archivo es demasiado grande. Máximo soportado: ${maxBytes / (1024 * 1024)} MB."
+                    )
+                }
+                buffer.write(chunk, 0, n)
             }
-            return bytes
+            return buffer.toByteArray()
         }
+    }
+
+    private fun obtenerTamano(uri: Uri): Long? {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val idx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+            if (cursor.moveToFirst() && idx >= 0 && !cursor.isNull(idx)) return cursor.getLong(idx)
+        }
+        return null
     }
 
     private fun resolverNombre(uri: Uri): String {

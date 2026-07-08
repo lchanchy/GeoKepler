@@ -58,7 +58,7 @@ object GeoTiffReader {
         9377 to TmParams(GRS80_A, GRS80_F, 4.0, -73.0, 0.9992, 5_000_000.0, 2_000_000.0)
     )
 
-    private const val MAX_PIXELES = 30_000_000L
+    private const val MAX_PIXELES = 12_000_000L
 
     fun leer(bytes: ByteArray): GeoTiffResult {
         if (bytes.size < 8) throw GeoTiffUnsupportedException("Archivo TIFF inválido o vacío")
@@ -90,13 +90,17 @@ object GeoTiffReader {
         val pixeles = decodificarPixeles(buf, ifd, width, height)
         var bitmap = Bitmap.createBitmap(pixeles, width, height, Bitmap.Config.ARGB_8888)
 
-        // Reducir a un máximo razonable para el mapa (igual criterio que el importador de GeoPDF)
+        // Reducir a un máximo razonable para el mapa (igual criterio que el importador de GeoPDF).
+        // Se libera el bitmap de resolución completa apenas se obtiene el escalado para no
+        // mantener dos copias grandes en memoria a la vez (riesgo de OOM en equipos de gama baja).
         val maxPx = 2048
         val escala = minOf(maxPx.toFloat() / width, maxPx.toFloat() / height, 1f)
         if (escala < 1f) {
             val w = (width * escala).toInt().coerceAtLeast(1)
             val h = (height * escala).toInt().coerceAtLeast(1)
-            bitmap = Bitmap.createScaledBitmap(bitmap, w, h, true)
+            val escalado = Bitmap.createScaledBitmap(bitmap, w, h, true)
+            bitmap.recycle()
+            bitmap = escalado
         }
 
         return GeoTiffResult(bitmap, norte = bbox[0], sur = bbox[1], este = bbox[2], oeste = bbox[3])
