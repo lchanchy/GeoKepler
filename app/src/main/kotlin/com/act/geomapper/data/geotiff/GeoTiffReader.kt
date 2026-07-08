@@ -545,15 +545,14 @@ object GeoTiffReader {
             if (previo != null) dictionary.add(previo + entrada[0])
             previo = entrada
 
-            // +1: el decodificador siempre añade su entrada un código más tarde que el
-            // codificador (no puede formarla hasta ver el código siguiente), así que su
-            // diccionario va un puesto "atrasado" — hay que compensarlo al elegir el ancho
-            // del próximo código para que coincida con el que usó el codificador.
-            val tamanoEquivalente = dictionary.size + 1
+            // TIFF LZW usa "early change": el ancho sube un código antes que en LZW/GIF
+            // estándar, es decir cuando el diccionario llega a 2^n-1 (511, 1023, 2047) y no
+            // a 2^n. Umbrales verificados contra streams reales de libtiff (round-trip
+            // completo cruzando todos los saltos de ancho y reinicios de diccionario).
             codeSize = when {
-                tamanoEquivalente >= 2047 -> 12
-                tamanoEquivalente >= 1023 -> 11
-                tamanoEquivalente >= 511  -> 10
+                dictionary.size >= 2047 -> 12
+                dictionary.size >= 1023 -> 11
+                dictionary.size >= 511  -> 10
                 else -> 9
             }
         }
