@@ -44,6 +44,10 @@ class ImportViewModel(
             cargarGeoPdf(context, uri)
             return
         }
+        if (nombre.endsWith(".tif") || nombre.endsWith(".tiff") || mime.contains("tiff")) {
+            cargarGeoTiff(context, uri)
+            return
+        }
         _state.update { it.copy(procesando = true, preview = emptyList(), error = null) }
         viewModelScope.launch {
             runCatching {
@@ -57,8 +61,27 @@ class ImportViewModel(
     }
 
     fun cargarGeoPdf(context: Context, uri: Uri) {
+        _state.update { it.copy(procesando = true, error = null) }
         viewModelScope.launch {
-            _geoPdfData.value = GeoPdfImporter(context).importar(uri)
+            runCatching { GeoPdfImporter(context).importar(uri) }
+                .onSuccess { data ->
+                    if (data != null) _geoPdfData.value = data
+                    else _state.update { it.copy(error = "No se pudo leer el GeoPDF (falta la georreferenciación /GPTS o la página no se pudo renderizar).") }
+                    _state.update { it.copy(procesando = false) }
+                }
+                .onFailure { e -> _state.update { it.copy(procesando = false, error = e.message ?: "Error al importar el GeoPDF") } }
+        }
+    }
+
+    fun cargarGeoTiff(context: Context, uri: Uri) {
+        _state.update { it.copy(procesando = true, error = null) }
+        viewModelScope.launch {
+            runCatching { com.act.geomapper.data.geotiff.GeoTiffImporter(context).importar(uri) }
+                .onSuccess { data ->
+                    _geoPdfData.value = data
+                    _state.update { it.copy(procesando = false) }
+                }
+                .onFailure { e -> _state.update { it.copy(procesando = false, error = e.message ?: "Error al importar el GeoTIFF") } }
         }
     }
 

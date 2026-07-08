@@ -572,6 +572,17 @@ private fun MapaApp(
                 }
             }
         }
+
+        // ── Error de importación (GeoTIFF / GeoPDF / vectores) ───────────
+        importState.error?.let { err ->
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 100.dp, start = 16.dp, end = 16.dp),
+                action = { TextButton(onClick = importVM::limpiarError) { Text(strings.ok) } }
+            ) { Text(err, fontSize = 13.sp) }
+        }
     }
 
     // ── Sheets ────────────────────────────────────────────────────────────────
