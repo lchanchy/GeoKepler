@@ -58,15 +58,21 @@ object GeoTiffReader {
         9377 to TmParams(GRS80_A, GRS80_F, 4.0, -73.0, 0.9992, 5_000_000.0, 2_000_000.0)
     )
 
-    private const val MAX_PIXELES = 12_000_000L
+    private const val DIM_MAXIMA = 300_000 // límite de cordura, no de memoria (ver decodificación muestreada)
 
-    fun leer(bytes: ByteArray): GeoTiffResult {
-        if (bytes.size < 8) throw GeoTiffUnsupportedException("Archivo TIFF inválido o vacío")
-        val buf = ByteBuffer.wrap(bytes)
+    /**
+     * Lee un GeoTIFF desde un [ByteBuffer] (idealmente un `MappedByteBuffer` sobre el archivo,
+     * para no tener que cargar el archivo completo en RAM). La decodificación de píxeles es
+     * "muestreada": nunca construye un buffer del tamaño completo de la imagen — salta directo
+     * a una resolución reducida saltándose tiras/tiles que no aportan ningún píxel muestreado.
+     * Así el costo en memoria es independiente del tamaño real del archivo.
+     */
+    fun leer(buf: ByteBuffer): GeoTiffResult {
+        if (buf.capacity() < 8) throw GeoTiffUnsupportedException("Archivo TIFF inválido o vacío")
         buf.order(
             when {
-                bytes[0] == 0x49.toByte() && bytes[1] == 0x49.toByte() -> ByteOrder.LITTLE_ENDIAN
-                bytes[0] == 0x4D.toByte() && bytes[1] == 0x4D.toByte() -> ByteOrder.BIG_ENDIAN
+                buf.get(0) == 0x49.toByte() && buf.get(1) == 0x49.toByte() -> ByteOrder.LITTLE_ENDIAN
+                buf.get(0) == 0x4D.toByte() && buf.get(1) == 0x4D.toByte() -> ByteOrder.BIG_ENDIAN
                 else -> throw GeoTiffUnsupportedException("No es un archivo TIFF válido")
             }
         )
@@ -79,29 +85,13 @@ object GeoTiffReader {
         val width  = readLongArray(buf, ifd[256] ?: throw GeoTiffUnsupportedException("TIFF sin ancho definido"))[0].toInt()
         val height = readLongArray(buf, ifd[257] ?: throw GeoTiffUnsupportedException("TIFF sin alto definido"))[0].toInt()
 
-        val totalPixeles = width.toLong() * height.toLong()
-        if (totalPixeles > MAX_PIXELES) {
-            throw GeoTiffUnsupportedException(
-                "La imagen es demasiado grande para el dispositivo (${width}x${height}). Redúzcala antes de importar."
-            )
+        if (width <= 0 || height <= 0 || width > DIM_MAXIMA || height > DIM_MAXIMA) {
+            throw GeoTiffUnsupportedException("Dimensiones de TIFF inválidas o no soportadas (${width}x${height})")
         }
 
         val bbox = extraerGeoreferencia(ifd, buf, width, height)
-        val pixeles = decodificarPixeles(buf, ifd, width, height)
-        var bitmap = Bitmap.createBitmap(pixeles, width, height, Bitmap.Config.ARGB_8888)
-
-        // Reducir a un máximo razonable para el mapa (igual criterio que el importador de GeoPDF).
-        // Se libera el bitmap de resolución completa apenas se obtiene el escalado para no
-        // mantener dos copias grandes en memoria a la vez (riesgo de OOM en equipos de gama baja).
-        val maxPx = 2048
-        val escala = minOf(maxPx.toFloat() / width, maxPx.toFloat() / height, 1f)
-        if (escala < 1f) {
-            val w = (width * escala).toInt().coerceAtLeast(1)
-            val h = (height * escala).toInt().coerceAtLeast(1)
-            val escalado = Bitmap.createScaledBitmap(bitmap, w, h, true)
-            bitmap.recycle()
-            bitmap = escalado
-        }
+        val (pixeles, outW, outH) = decodificarPixelesMuestreado(buf, ifd, width, height)
+        val bitmap = Bitmap.createBitmap(pixeles, outW, outH, Bitmap.Config.ARGB_8888)
 
         return GeoTiffResult(bitmap, norte = bbox[0], sur = bbox[1], este = bbox[2], oeste = bbox[3])
     }
@@ -314,7 +304,15 @@ object GeoTiffReader {
 
     // ── Decodificación de píxeles ────────────────────────────────────────────
 
-    private fun decodificarPixeles(buf: ByteBuffer, ifd: Map<Int, Tag>, width: Int, height: Int): IntArray {
+    /**
+     * Decodifica el TIFF directamente a una resolución reducida (máximo ~2048px de lado),
+     * SIN pasar nunca por un buffer del tamaño completo de la imagen: las tiras/tiles que no
+     * contienen ningún píxel de la rejilla de muestreo se saltan por completo (no se leen ni
+     * se descomprimen). Esto es lo que permite importar rásteres de cientos de MB sin OOM.
+     */
+    private fun decodificarPixelesMuestreado(
+        buf: ByteBuffer, ifd: Map<Int, Tag>, width: Int, height: Int
+    ): Triple<IntArray, Int, Int> {
         val bitsPerSample = readLongArray(buf, ifd[258] ?: throw GeoTiffUnsupportedException("TIFF sin BitsPerSample"))
         if (bitsPerSample.any { it != 8L }) {
             throw GeoTiffUnsupportedException("Solo se soportan TIFF de 8 bits por canal")
@@ -331,7 +329,11 @@ object GeoTiffReader {
         val photometric = ifd[262]?.let { readLongArray(buf, it)[0] } ?: 1L
         val spp = samplesPerPixel.toInt()
 
-        val pixeles = IntArray(width * height)
+        val maxDim = 2048
+        val factor = maxOf(1, (maxOf(width, height) + maxDim - 1) / maxDim)
+        val outW = (width + factor - 1) / factor
+        val outH = (height + factor - 1) / factor
+        val salida = IntArray(outW * outH)
 
         fun descomprimir(raw: ByteArray, esperado: Int): ByteArray = when (compression) {
             1L          -> raw
@@ -341,24 +343,21 @@ object GeoTiffReader {
             else        -> throw GeoTiffUnsupportedException("Compresión TIFF no soportada (código $compression)")
         }
 
-        fun escribirPixel(x: Int, y: Int, datos: ByteArray, off: Int) {
-            if (x >= width || y >= height || off + spp > datos.size) return
-            val argb = when (spp) {
-                1 -> {
-                    var v = datos[off].toInt() and 0xFF
-                    if (photometric == 0L) v = 255 - v
-                    Color.rgb(v, v, v)
-                }
-                3 -> Color.rgb(
-                    datos[off].toInt() and 0xFF, datos[off + 1].toInt() and 0xFF, datos[off + 2].toInt() and 0xFF
-                )
-                else -> Color.argb(
-                    datos[off + 3].toInt() and 0xFF,
-                    datos[off].toInt() and 0xFF, datos[off + 1].toInt() and 0xFF, datos[off + 2].toInt() and 0xFF
-                )
+        fun colorDe(datos: ByteArray, off: Int): Int = when (spp) {
+            1 -> {
+                var v = datos[off].toInt() and 0xFF
+                if (photometric == 0L) v = 255 - v
+                Color.rgb(v, v, v)
             }
-            pixeles[y * width + x] = argb
+            3 -> Color.rgb(datos[off].toInt() and 0xFF, datos[off + 1].toInt() and 0xFF, datos[off + 2].toInt() and 0xFF)
+            else -> Color.argb(
+                datos[off + 3].toInt() and 0xFF,
+                datos[off].toInt() and 0xFF, datos[off + 1].toInt() and 0xFF, datos[off + 2].toInt() and 0xFF
+            )
         }
+
+        /** Primera coordenada >= inicio que cae en la rejilla de muestreo (múltiplo de [factor]). */
+        fun primeraMuestraDesde(inicio: Int) = ((inicio + factor - 1) / factor) * factor
 
         val tileWidthTag = ifd[322]
         if (tileWidthTag != null) {
@@ -372,7 +371,17 @@ object GeoTiffReader {
             val esperado = tileWidth * tileLength * spp
 
             for (ty in 0 until tilesDown) {
+                val y0 = ty * tileLength
+                val filas = min(tileLength, height - y0)
+                val primeraFila = primeraMuestraDesde(y0)
+                if (primeraFila >= y0 + filas) continue // ninguna fila de este tile-row se muestrea
+
                 for (tx in 0 until tilesAcross) {
+                    val x0 = tx * tileWidth
+                    val cols = min(tileWidth, width - x0)
+                    val primeraCol = primeraMuestraDesde(x0)
+                    if (primeraCol >= x0 + cols) continue // se salta el tile completo
+
                     val idx = ty * tilesAcross + tx
                     if (idx >= tileOffsets.size) continue
                     val off = tileOffsets[idx].toInt()
@@ -380,16 +389,23 @@ object GeoTiffReader {
                     val raw = ByteArray(len)
                     buf.position(off); buf.get(raw)
                     val decodificado = descomprimir(raw, esperado)
-                    val x0 = tx * tileWidth
-                    val y0 = ty * tileLength
-                    val filas = min(tileLength, height - y0)
-                    val cols  = min(tileWidth, width - x0)
-                    for (row in 0 until filas) {
-                        var srcOff = row * stride
-                        for (col in 0 until cols) {
-                            escribirPixel(x0 + col, y0 + row, decodificado, srcOff)
-                            srcOff += spp
+
+                    var yAbs = primeraFila
+                    while (yAbs < y0 + filas) {
+                        val oy = yAbs / factor
+                        if (oy < outH) {
+                            val filaOff = (yAbs - y0) * stride
+                            var xAbs = primeraCol
+                            while (xAbs < x0 + cols) {
+                                val srcOff = filaOff + (xAbs - x0) * spp
+                                val ox = xAbs / factor
+                                if (ox < outW && srcOff + spp <= decodificado.size) {
+                                    salida[oy * outW + ox] = colorDe(decodificado, srcOff)
+                                }
+                                xAbs += factor
+                            }
                         }
+                        yAbs += factor
                     }
                 }
             }
@@ -403,22 +419,36 @@ object GeoTiffReader {
                 val y0 = s * rowsPerStrip
                 if (y0 >= height) break
                 val filas = min(rowsPerStrip, height - y0)
+                val primeraFila = primeraMuestraDesde(y0)
+                if (primeraFila >= y0 + filas) continue // se salta la tira completa
+
                 val off = stripOffsets[s].toInt()
                 val len = stripByteCounts[s].toInt()
                 val raw = ByteArray(len)
                 buf.position(off); buf.get(raw)
                 val decodificado = descomprimir(raw, filas * stride)
-                for (row in 0 until filas) {
-                    var srcOff = row * stride
-                    for (col in 0 until width) {
-                        escribirPixel(col, y0 + row, decodificado, srcOff)
-                        srcOff += spp
+
+                var yAbs = primeraFila
+                while (yAbs < y0 + filas) {
+                    val oy = yAbs / factor
+                    if (oy < outH) {
+                        val filaOff = (yAbs - y0) * stride
+                        var xAbs = 0
+                        while (xAbs < width) {
+                            val srcOff = filaOff + xAbs * spp
+                            val ox = xAbs / factor
+                            if (ox < outW && srcOff + spp <= decodificado.size) {
+                                salida[oy * outW + ox] = colorDe(decodificado, srcOff)
+                            }
+                            xAbs += factor
+                        }
                     }
+                    yAbs += factor
                 }
             }
         }
 
-        return pixeles
+        return Triple(salida, outW, outH)
     }
 
     // ── Descompresores ───────────────────────────────────────────────────────
