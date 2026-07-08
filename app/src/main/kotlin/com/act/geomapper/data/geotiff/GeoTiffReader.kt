@@ -318,7 +318,7 @@ object GeoTiffReader {
             throw GeoTiffUnsupportedException("Solo se soportan TIFF de 8 bits por canal")
         }
         val samplesPerPixel = ifd[277]?.let { readLongArray(buf, it)[0] } ?: 1L
-        if (samplesPerPixel !in longArrayOf(1L, 3L, 4L)) {
+        if (samplesPerPixel < 1L) {
             throw GeoTiffUnsupportedException("Formato de color TIFF no soportado ($samplesPerPixel canales)")
         }
         val planarConfig = ifd[284]?.let { readLongArray(buf, it)[0] } ?: 1L
@@ -343,17 +343,24 @@ object GeoTiffReader {
             else        -> throw GeoTiffUnsupportedException("Compresión TIFF no soportada (código $compression)")
         }
 
-        fun colorDe(datos: ByteArray, off: Int): Int = when (spp) {
-            1 -> {
+        // Bandas: 1=gris, 2=gris+extra (se ignora), 3=RGB, 4=RGBA, >4=multiespectral
+        // (ej. drones agrícolas con NIR/red-edge) — se usan las 3 primeras como RGB y se
+        // ignoran las bandas adicionales, en vez de rechazar el archivo.
+        fun colorDe(datos: ByteArray, off: Int): Int = when {
+            spp == 1 -> {
                 var v = datos[off].toInt() and 0xFF
                 if (photometric == 0L) v = 255 - v
                 Color.rgb(v, v, v)
             }
-            3 -> Color.rgb(datos[off].toInt() and 0xFF, datos[off + 1].toInt() and 0xFF, datos[off + 2].toInt() and 0xFF)
-            else -> Color.argb(
+            spp == 2 -> {
+                val v = datos[off].toInt() and 0xFF
+                Color.rgb(v, v, v)
+            }
+            spp == 4 -> Color.argb(
                 datos[off + 3].toInt() and 0xFF,
                 datos[off].toInt() and 0xFF, datos[off + 1].toInt() and 0xFF, datos[off + 2].toInt() and 0xFF
             )
+            else -> Color.rgb(datos[off].toInt() and 0xFF, datos[off + 1].toInt() and 0xFF, datos[off + 2].toInt() and 0xFF)
         }
 
         /** Primera coordenada >= inicio que cae en la rejilla de muestreo (múltiplo de [factor]). */
