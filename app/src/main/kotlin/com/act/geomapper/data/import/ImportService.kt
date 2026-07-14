@@ -208,6 +208,12 @@ class ImportService(private val context: Context) {
 
     private fun importarZip(uri: Uri): List<EntidadImportada> {
         val resultado = mutableListOf<EntidadImportada>()
+        // Los shapefiles vienen como varios archivos (.shp/.shx/.dbf/.prj), a veces dentro de
+        // una subcarpeta. Se agrupan por nombre base para poder combinarlos.
+        val shpPorBase = mutableMapOf<String, ByteArray>()
+        val prjPorBase = mutableMapOf<String, ByteArray>()
+        val dbfPorBase = mutableMapOf<String, ByteArray>()
+
         context.contentResolver.openInputStream(uri)?.use { inputStream ->
             ZipInputStream(inputStream).use { zip ->
                 var entry = zip.nextEntry
@@ -215,6 +221,7 @@ class ImportService(private val context: Context) {
                     val nombre = entry.name.lowercase()
                     if (!entry.isDirectory) {
                         val bytes = zip.readBytes()
+                        val base = nombre.substringBeforeLast('.')
                         when {
                             nombre.endsWith(".geojson") || nombre.endsWith(".json") ->
                                 resultado.addAll(importarGeoJson(String(bytes, Charsets.UTF_8)))
@@ -222,11 +229,25 @@ class ImportService(private val context: Context) {
                                 resultado.addAll(importarKml(String(bytes, Charsets.UTF_8)))
                             nombre.endsWith(".gpx") ->
                                 resultado.addAll(importarGpx(String(bytes, Charsets.UTF_8)))
+                            nombre.endsWith(".shp") -> shpPorBase[base] = bytes
+                            nombre.endsWith(".prj") -> prjPorBase[base] = bytes
+                            nombre.endsWith(".dbf") -> dbfPorBase[base] = bytes
                         }
                     }
                     entry = zip.nextEntry
                 }
             }
+        }
+
+        // Procesar cada shapefile encontrado (reproyectando con su .prj)
+        shpPorBase.forEach { (base, shp) ->
+            resultado.addAll(
+                ShapefileReader.leer(
+                    shp = shp,
+                    prj = prjPorBase[base]?.let { String(it, Charsets.ISO_8859_1) },
+                    dbf = dbfPorBase[base]
+                )
+            )
         }
         return resultado
     }

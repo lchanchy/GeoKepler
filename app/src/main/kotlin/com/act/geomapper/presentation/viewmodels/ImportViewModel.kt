@@ -19,7 +19,8 @@ data class ImportState(
     val procesando     : Boolean                = false,
     val guardadas      : Int                    = 0,
     val error          : String?               = null,
-    val progresoRaster : Int?                   = null   // null = sin carga en curso; 0-100 = %
+    val progresoRaster : Int?                   = null,  // null = sin carga en curso; 0-100 = %
+    val bboxImportado  : ZoomBounds?            = null   // extensión de lo importado, para hacer zoom
 )
 
 class ImportViewModel(
@@ -98,11 +99,18 @@ class ImportViewModel(
         _state.update { it.copy(procesando = true) }
         viewModelScope.launch {
             var guardadas = 0
+            var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
+            var minY = Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
             entidades.forEach { e ->
                 runCatching {
                     val geom     = geometryService.wktAGeometria(e.wkt)
                     val area     = geometryService.calcularAreaHa(e.wkt)
                     val perimetro = geometryService.calcularPerimetroM(e.wkt)
+                    val env = geom.envelopeInternal
+                    if (env.minX < minX) minX = env.minX
+                    if (env.maxX > maxX) maxX = env.maxX
+                    if (env.minY < minY) minY = env.minY
+                    if (env.maxY > maxY) maxY = env.maxY
                     guardarPredio(Predio(
                         proyectoId  = proyectoId,
                         nombre      = e.nombre,
@@ -113,7 +121,9 @@ class ImportViewModel(
                     guardadas++
                 }
             }
-            _state.update { it.copy(procesando = false, guardadas = guardadas, preview = emptyList()) }
+            val bbox = if (guardadas > 0 && minX <= maxX)
+                ZoomBounds(norte = maxY, sur = minY, este = maxX, oeste = minX) else null
+            _state.update { it.copy(procesando = false, guardadas = guardadas, preview = emptyList(), bboxImportado = bbox) }
         }
     }
 

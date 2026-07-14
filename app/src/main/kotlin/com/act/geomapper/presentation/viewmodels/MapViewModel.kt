@@ -15,6 +15,9 @@ import kotlinx.coroutines.launch
 
 enum class ModoCaptura { NINGUNO, PUNTO, LINEA, POLIGONO }
 
+/** Extensión geográfica para hacer zoom (p. ej. tras importar entidades). */
+data class ZoomBounds(val norte: Double, val sur: Double, val este: Double, val oeste: Double)
+
 data class MapUiState(
     val estadoGps           : EstadoGps      = EstadoGps(),
     val modoCaptura         : ModoCaptura    = ModoCaptura.NINGUNO,
@@ -24,6 +27,7 @@ data class MapUiState(
     val areaHa              : Double         = 0.0,
     val azimut              : Float          = 0f,
     val centrarEnGps        : Boolean        = false,
+    val zoomBounds          : ZoomBounds?    = null,
     val capturaRecuperada   : Int            = 0,
     val editingPredio       : Predio?        = null,
     val navegacionDestino   : PuntoGps?      = null,
@@ -75,6 +79,10 @@ class MapViewModel(
 
     fun guardarPosicion(lat: Double, lon: Double, zoom: Double) =
         _uiState.update { it.copy(lastMapLat = lat, lastMapLon = lon, lastMapZoom = zoom) }
+
+    fun zoomAExtension(norte: Double, sur: Double, este: Double, oeste: Double) =
+        _uiState.update { it.copy(zoomBounds = ZoomBounds(norte, sur, este, oeste)) }
+    fun zoomBoundsConsumido() = _uiState.update { it.copy(zoomBounds = null) }
 
     fun centrarEnCoordenada(lat: Double, lon: Double) {
         _uiState.update { it.copy(

@@ -755,6 +755,10 @@ private fun MapaApp(
     // Toast de importación completada
     if (importState.guardadas > 0) {
         LaunchedEffect(importState.guardadas) {
+            // Llevar el mapa a las entidades recién importadas para que sean visibles
+            importState.bboxImportado?.let { b ->
+                mapVM.zoomAExtension(b.norte, b.sur, b.este, b.oeste)
+            }
             importVM.limpiar() // cargarTodos() reactivo — Room emite automáticamente
         }
     }

@@ -367,6 +367,18 @@ fun MapScreen(
         }
     }
 
+    // Zoom a la extensión de entidades recién importadas (shapefile, GeoJSON, KML…)
+    LaunchedEffect(uiState.zoomBounds) {
+        uiState.zoomBounds?.let { b ->
+            runCatching {
+                mapView.zoomToBoundingBox(
+                    org.osmdroid.util.BoundingBox(b.norte, b.este, b.sur, b.oeste), true, 64
+                )
+            }
+            viewModel.zoomBoundsConsumido()
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
 
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
